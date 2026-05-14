@@ -150,7 +150,8 @@ def _format_one(record: dict, client: Portkey) -> CanonicalReport:
         except Exception as e:
             if attempt == 5:
                 raise
-            if "429" in str(e) or "rate" in str(e).lower():
+            err = str(e)
+            if "429" in err or "500" in err or "rate" in err.lower() or "server" in err.lower():
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
             else:
