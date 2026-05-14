@@ -65,6 +65,11 @@ Use clinical context to infer the intended meaning and write a clean, complete p
 (e.g. "No pleural effusion", "Cardiac device with leads").
 - Only include findings with clear clinical meaning. Skip any phrase you cannot \
 confidently interpret.
+- The model only sees the current image — do not include any temporal or comparative \
+language. If a finding is described as "stable", "unchanged", "new since prior", \
+"interval worsening", "again noted", etc., extract only the finding itself based on \
+its current appearance. Never use words like "stable", "unchanged", "interval", \
+"prior", "previous", "again" in finding names or attributes.
 
 Rules for impression:
 - Include only the clinical conclusion — what the radiologist determined from the study.
