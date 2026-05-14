@@ -1,0 +1,20 @@
+============================================================
+  BASELINE: Qwen3.5-0.8B (zero-shot, no fine-tuning)
+============================================================
+  Test samples: 771
+
+── Level 1: Normal / Abnormal ─────────────────────────────
+  Accuracy    : 0.372
+  Sensitivity : 0.993
+  Specificity : 0.019
+  F1          : 0.534
+  TP=265 TN=9 FP=461 FN=2
+
+── Level 2: Finding Presence (14 labels) ──────────────────
+  Macro F1          : 0.000
+  Macro Sensitivity : nan
+  Macro Specificity : nan
+  Macro Precision   : nan
+
+  Label                                    F1    Sens    Spec     N+
+  --------------------------------------------------------------

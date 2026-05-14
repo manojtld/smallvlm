@@ -1,0 +1,25 @@
+{
+  "model": "Qwen/Qwen3.5-0.8B",
+  "n_samples": 771,
+  "level1": {
+    "accuracy": 0.3718,
+    "sensitivity": 0.9925,
+    "specificity": 0.0191,
+    "precision": 0.365,
+    "f1": 0.5337,
+    "tp": 265,
+    "tn": 9,
+    "fp": 461,
+    "fn": 2,
+    "n": 737
+  },
+  "level2": {
+    "per_label": {},
+    "macro": {
+      "macro_f1": 0.0,
+      "macro_sensitivity": NaN,
+      "macro_specificity": NaN,
+      "macro_precision": NaN
+    }
+  }
+}

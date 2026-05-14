@@ -97,7 +97,7 @@ class QwenEvaluator:
         image = self._load_image(image_path)
         label_list = "\n".join(f"- {l}" for l in labels)
         prompt = LEVEL2_PROMPT_TEMPLATE.format(labels=label_list)
-        response = self._generate(image, prompt, max_new_tokens=256)
+        response = self._generate(image, prompt, max_new_tokens=512)
 
         # Strip markdown fences if present
         response = response.strip()
@@ -106,13 +106,7 @@ class QwenEvaluator:
 
         try:
             data = json.loads(response)
-            # Model sometimes returns a list of single-key dicts — flatten it
-            if isinstance(data, list):
-                merged = {}
-                for item in data:
-                    if isinstance(item, dict):
-                        merged.update(item)
-                data = merged
+            # Format 1: {"Label": true/false, ...}
             if isinstance(data, dict):
                 for label in labels:
                     if label in data:
@@ -122,6 +116,24 @@ class QwenEvaluator:
                             if k.lower() == label.lower():
                                 result[label] = bool(v)
                                 break
+            # Format 2: [{"r": "Label", "f": true}, ...] — abbreviated keys
+            elif isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    # Try common abbreviated key patterns the model uses
+                    name = item.get("r") or item.get("finding") or item.get("label") or item.get("name")
+                    val  = item.get("f") or item.get("present") or item.get("value") or item.get("found")
+                    if name is None or val is None:
+                        # Might be a single-key dict like {"Cardiomegaly": true}
+                        if len(item) == 1:
+                            name, val = next(iter(item.items()))
+                        else:
+                            continue
+                    for label in labels:
+                        if str(name).lower() == label.lower():
+                            result[label] = bool(val)
+                            break
         except (json.JSONDecodeError, TypeError):
             pass
 
