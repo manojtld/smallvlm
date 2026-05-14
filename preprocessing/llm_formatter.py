@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional
@@ -133,16 +134,27 @@ def _parse_llm_output(text: str, uid: int, raw: dict) -> CanonicalReport:
 
 
 def _format_one(record: dict, client: Portkey) -> CanonicalReport:
-    response = client.chat.completions.create(
-        model=MODEL,
-        max_tokens=2048,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": _make_user_content(record)},
-        ],
-    )
-    text = response.choices[0].message.content or ""
-    return _parse_llm_output(text, record["uid"], record)
+    delay = 5
+    for attempt in range(6):
+        try:
+            response = client.chat.completions.create(
+                model=MODEL,
+                max_tokens=2048,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": _make_user_content(record)},
+                ],
+            )
+            text = response.choices[0].message.content or ""
+            return _parse_llm_output(text, record["uid"], record)
+        except Exception as e:
+            if attempt == 5:
+                raise
+            if "429" in str(e) or "rate" in str(e).lower():
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+            else:
+                raise
 
 
 # ── Main formatting function ──────────────────────────────────────────────────
