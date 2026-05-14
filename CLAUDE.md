@@ -17,10 +17,21 @@ Requires `kagglehub` and valid Kaggle credentials configured locally (`~/.kaggle
 
 ## Dataset
 
-- Source: Kaggle dataset `raddar/chest-xrays-indiana-university`
-- Downloaded via `kagglehub.dataset_download()`, which caches to `~/.cache/kagglehub/`
-- Contains `indiana_reports.csv` (uid, findings, impression, MeSH), `indiana_projections.csv`, and `images/images_normalized/*.png`
-- ~3,851 reports; each report may have a frontal and a lateral PNG
+**Location**: `/raid/manoj/smallvlm/raddar/chest-xrays-indiana-university/versions/2/`
+
+| File | Description |
+|---|---|
+| `indiana_reports.csv` | 3,851 reports — uid, MeSH, Problems, findings, impression, indication, comparison |
+| `indiana_projections.csv` | 7,466 rows mapping uid → filename + projection (Frontal/Lateral) |
+| `images/images_normalized/` | 7,470 PNGs named `{uid}_{series}.dcm.png` |
+
+Key facts:
+- 3,388 UIDs have both frontal+lateral; 301 frontal-only; 162 lateral-only
+- 195 UIDs have 3-5 images (multiple frontal or lateral shots) — we keep the first of each
+- 514 reports have null findings (13%); impression is almost always present
+- 1,379 normal reports (35.8%) — identified by `MeSH == "normal"`
+- 1,426 reports contain `XXXX` tokens (de-identified proper nouns) — passed through as-is
+- `Problems` column = cleaner version of `MeSH` (no anatomical qualifiers)
 
 ## Preprocessing Pipeline
 
