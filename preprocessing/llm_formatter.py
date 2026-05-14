@@ -45,12 +45,25 @@ Schema:
   "normal": <true if explicitly normal, false otherwise>
 }
 
-Rules:
-- Split compound findings into individual items (e.g. "cardiomegaly" and "pleural effusion" separately).
-- Write a clean, concise impression — do not copy administrative or communication content.
+Rules for findings:
+- Split compound findings into individual items.
+- The input may contain grammatically incomplete phrases where words were redacted \
+(e.g. "There are no of a pleural effusion", "cardiac with leads"). \
+Use clinical context to infer the intended meaning and write a clean, complete phrase \
+(e.g. "No pleural effusion", "Cardiac device with leads").
+- Only include findings with clear clinical meaning. Skip any phrase you cannot \
+confidently interpret.
+
+Rules for impression:
+- Include only the clinical conclusion — what the radiologist determined from the study.
+- Exclude all administrative and communication content: phrases about findings being \
+discussed with the patient or physician, telephone communications, follow-up \
+scheduling, technologist notes, or any non-clinical statement.
+- Write it as one clean paragraph or numbered list matching the original clinical content.
+
+General:
 - Set normal=true only when the report states no abnormalities.
 - Use null (JSON null, not the string "null") for missing attribute values.
-- Do not include incomplete, unclear, or redacted phrases in any output field.
 """
 
 
