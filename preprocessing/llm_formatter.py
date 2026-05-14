@@ -1,28 +1,30 @@
 """
-Convert raw CXR reports into CanonicalReport JSON using Claude.
+Convert raw CXR reports into CanonicalReport JSON using Qwen via Portkey.
 
-Two modes:
-  - batch  (default): uses the Batches API for 50% cost reduction (~$1-3 for the full dataset)
-  - sync           : direct calls, useful for testing a handful of records
+Requires env vars:
+  PORTKEY_API_KEY       - your Portkey API key
+  PORTKEY_VIRTUAL_KEY   - virtual key pointing to OpenRouter (e.g. openrouter-f6f680)
 
-Model: claude-haiku-4-5 by default (cheapest; adequate for structured extraction).
-Change MODEL to claude-opus-4-7 for higher fidelity if budget allows.
+Model: qwen/qwen3.6-flash by default (fast, cheap, 1M context).
+Set MODEL env var or pass model= to override.
+
+Processing uses a thread pool for parallelism and checkpoints results to disk
+so runs can be resumed after interruption.
 """
 
 from __future__ import annotations
 
 import json
-import time
+import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import List, Optional
 
-import anthropic
-from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
-from anthropic.types.messages.batch_create_params import Request
+from portkey_ai import Portkey
 
 from .schema import CanonicalReport, FindingAttributes
 
-MODEL = "claude-haiku-4-5"
+MODEL = os.environ.get("PORTKEY_MODEL", "qwen/qwen3.6-flash")
 
 SYSTEM_PROMPT = """\
 You are a radiology AI assistant. Convert the provided chest X-ray report into \
@@ -34,7 +36,7 @@ Schema:
   "impression": "<clinical impression as a single string>",
   "attributes": {
     "<finding>": {
-      "severity": "<mild|moderate|severe|null>",
+      "severity": "<mild|moderate|severe or null>",
       "location": "<anatomical location or null>",
       "size": "<size description or null>"
     }
@@ -46,11 +48,28 @@ Rules:
 - Split compound findings into individual items (e.g. "cardiomegaly" and "pleural effusion" separately).
 - Preserve the original impression text verbatim.
 - Set normal=true only when the report states no abnormalities.
-- Use null (JSON) not the string "null" for missing attributes.
+- Use null (JSON null, not the string "null") for missing attribute values.
 """
 
 
+def _make_client() -> Portkey:
+    return Portkey(
+        api_key=os.environ["PORTKEY_API_KEY"],
+        virtual_key=os.environ["PORTKEY_VIRTUAL_KEY"],
+    )
+
+
+def _make_user_content(record: dict) -> str:
+    findings = record.get("raw_findings") or "none"
+    impression = record.get("raw_impression") or "none"
+    return f"FINDINGS: {findings}\n\nIMPRESSION: {impression}"
+
+
 def _parse_llm_output(text: str, uid: int, raw: dict) -> CanonicalReport:
+    # Strip markdown fences if the model wraps output despite instructions
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
         data = json.loads(text)
         attributes = {
@@ -68,7 +87,6 @@ def _parse_llm_output(text: str, uid: int, raw: dict) -> CanonicalReport:
             raw_impression=raw.get("raw_impression", ""),
         )
     except (json.JSONDecodeError, TypeError, ValueError):
-        # Fallback: keep raw text, mark as unparsed
         return CanonicalReport(
             uid=uid,
             mesh_tags=raw.get("mesh_tags", []),
@@ -77,126 +95,74 @@ def _parse_llm_output(text: str, uid: int, raw: dict) -> CanonicalReport:
         )
 
 
-def _make_user_content(record: dict) -> str:
-    findings = record.get("raw_findings") or "none"
-    impression = record.get("raw_impression") or "none"
-    return f"FINDINGS: {findings}\n\nIMPRESSION: {impression}"
+def _format_one(record: dict, client: Portkey) -> CanonicalReport:
+    response = client.chat.completions.create(
+        model=MODEL,
+        max_tokens=1024,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _make_user_content(record)},
+        ],
+    )
+    text = response.choices[0].message.content or ""
+    return _parse_llm_output(text, record["uid"], record)
 
 
-# ── Batch mode ────────────────────────────────────────────────────────────────
+# ── Main formatting function ──────────────────────────────────────────────────
 
-def submit_batch(records: List[dict], client: Optional[anthropic.Anthropic] = None) -> str:
-    """Submit all records as a single batch. Returns batch_id."""
-    client = client or anthropic.Anthropic()
-    requests = [
-        Request(
-            custom_id=str(r["uid"]),
-            params=MessageCreateParamsNonStreaming(
-                model=MODEL,
-                max_tokens=1024,
-                system=[
-                    {
-                        "type": "text",
-                        "text": SYSTEM_PROMPT,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                messages=[{"role": "user", "content": _make_user_content(r)}],
-            ),
-        )
-        for r in records
-    ]
-    batch = client.messages.batches.create(requests=requests)
-    print(f"Batch submitted: {batch.id}  ({len(requests)} requests)")
-    return batch.id
-
-
-def poll_batch(batch_id: str, poll_interval: int = 60, client: Optional[anthropic.Anthropic] = None) -> None:
-    """Block until the batch completes."""
-    client = client or anthropic.Anthropic()
-    while True:
-        batch = client.messages.batches.retrieve(batch_id)
-        if batch.processing_status == "ended":
-            print(f"Batch {batch_id} complete — succeeded: {batch.request_counts.succeeded}, "
-                  f"errored: {batch.request_counts.errored}")
-            return
-        remaining = batch.request_counts.processing
-        print(f"Batch {batch_id}: {remaining} remaining … (sleeping {poll_interval}s)")
-        time.sleep(poll_interval)
-
-
-def collect_batch_results(
-    batch_id: str,
-    records_by_uid: dict,
-    client: Optional[anthropic.Anthropic] = None,
-) -> List[CanonicalReport]:
-    """Collect and parse batch results. records_by_uid maps uid -> raw record."""
-    client = client or anthropic.Anthropic()
-    results = []
-    for result in client.messages.batches.results(batch_id):
-        uid = int(result.custom_id)
-        raw = records_by_uid.get(uid, {"uid": uid})
-        if result.result.type == "succeeded":
-            msg = result.result.message
-            text = next((b.text for b in msg.content if b.type == "text"), "")
-            results.append(_parse_llm_output(text, uid, raw))
-        else:
-            results.append(CanonicalReport(
-                uid=uid,
-                mesh_tags=raw.get("mesh_tags", []),
-                raw_findings=raw.get("raw_findings", ""),
-                raw_impression=raw.get("raw_impression", ""),
-            ))
-    return results
-
-
-def format_reports_batch(
+def format_reports(
     records: List[dict],
-    batch_id_file: Optional[str | Path] = None,
-    poll_interval: int = 60,
+    checkpoint_path: Optional[str | Path] = None,
+    workers: int = 10,
 ) -> List[CanonicalReport]:
     """
-    Full batch pipeline: submit → poll → collect.
-    Saves the batch_id to batch_id_file so you can resume if interrupted.
+    Format all records using a thread pool.
+
+    Checkpoints results to `checkpoint_path` (JSONL) after each completed
+    record so a run can be resumed after interruption — already-processed
+    UIDs are skipped on restart.
+
+    Args:
+        records:         List of raw report dicts from report_parser.
+        checkpoint_path: Path to a JSONL file for incremental saves.
+                         Pass None to skip checkpointing.
+        workers:         Number of parallel threads (default 10).
     """
-    client = anthropic.Anthropic()
-    records_by_uid = {r["uid"]: r for r in records}
+    client = _make_client()
 
-    if batch_id_file and Path(batch_id_file).exists():
-        batch_id = Path(batch_id_file).read_text().strip()
-        print(f"Resuming batch {batch_id}")
-    else:
-        batch_id = submit_batch(records, client)
-        if batch_id_file:
-            Path(batch_id_file).write_text(batch_id)
+    # Load already-processed UIDs from checkpoint
+    done_uids: set = set()
+    results: List[CanonicalReport] = []
+    if checkpoint_path and Path(checkpoint_path).exists():
+        existing = load_canonical(checkpoint_path)
+        done_uids = {r.uid for r in existing}
+        results = existing
+        print(f"Resuming: {len(done_uids)} already done, {len(records) - len(done_uids)} remaining")
 
-    poll_batch(batch_id, poll_interval, client)
-    return collect_batch_results(batch_id, records_by_uid, client)
+    pending = [r for r in records if r["uid"] not in done_uids]
+    if not pending:
+        print("All records already processed.")
+        return results
 
+    checkpoint_file = open(checkpoint_path, "a") if checkpoint_path else None
 
-# ── Sync mode (testing / small subsets) ──────────────────────────────────────
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_format_one, r, client): r for r in pending}
+            completed = 0
+            for future in as_completed(futures):
+                report = future.result()
+                results.append(report)
+                if checkpoint_file:
+                    checkpoint_file.write(report.model_dump_json() + "\n")
+                    checkpoint_file.flush()
+                completed += 1
+                if completed % 50 == 0 or completed == len(pending):
+                    print(f"  {completed}/{len(pending)} done")
+    finally:
+        if checkpoint_file:
+            checkpoint_file.close()
 
-def format_reports_sync(records: List[dict]) -> List[CanonicalReport]:
-    """Process records one-by-one synchronously. Use for testing only."""
-    client = anthropic.Anthropic()
-    results = []
-    for i, record in enumerate(records):
-        response = client.messages.create(
-            model=MODEL,
-            max_tokens=1024,
-            system=[
-                {
-                    "type": "text",
-                    "text": SYSTEM_PROMPT,
-                    "cache_control": {"type": "ephemeral"},
-                }
-            ],
-            messages=[{"role": "user", "content": _make_user_content(record)}],
-        )
-        text = next((b.text for b in response.content if b.type == "text"), "")
-        results.append(_parse_llm_output(text, record["uid"], record))
-        if (i + 1) % 10 == 0:
-            print(f"  {i + 1}/{len(records)} done")
     return results
 
 

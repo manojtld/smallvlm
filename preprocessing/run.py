@@ -31,23 +31,15 @@ def cmd_parse(args: argparse.Namespace) -> None:
 
 def cmd_format(args: argparse.Namespace) -> None:
     from .report_parser import load_parsed
-    from .llm_formatter import format_reports_batch, format_reports_sync, save_canonical
+    from .llm_formatter import format_reports, save_canonical
 
     records = load_parsed(args.input)
     if args.limit:
         records = records[: args.limit]
         print(f"Limiting to {args.limit} records")
 
-    if args.sync:
-        reports = format_reports_sync(records)
-    else:
-        batch_id_file = Path(args.output).with_suffix(".batch_id")
-        reports = format_reports_batch(
-            records,
-            batch_id_file=batch_id_file,
-            poll_interval=args.poll_interval,
-        )
-
+    checkpoint = Path(args.output).with_suffix(".checkpoint.jsonl")
+    reports = format_reports(records, checkpoint_path=checkpoint, workers=args.workers)
     save_canonical(reports, args.output)
 
 
@@ -83,9 +75,8 @@ def cmd_all(args: argparse.Namespace) -> None:
     format_args = argparse.Namespace(
         input=parsed,
         output=canonical,
-        sync=args.sync,
         limit=args.limit,
-        poll_interval=args.poll_interval,
+        workers=args.workers,
     )
     cmd_format(format_args)
 
@@ -112,9 +103,8 @@ def main() -> None:
     p_fmt = subs.add_parser("format", help="LLM-format parsed reports → canonical.jsonl")
     p_fmt.add_argument("--input", default=DATA_DIR / "parsed.jsonl")
     p_fmt.add_argument("--output", default=DATA_DIR / "canonical.jsonl")
-    p_fmt.add_argument("--sync", action="store_true", help="Use sync API (no batching)")
     p_fmt.add_argument("--limit", type=int, default=None, help="Process only first N records")
-    p_fmt.add_argument("--poll-interval", type=int, default=60, help="Batch poll interval (seconds)")
+    p_fmt.add_argument("--workers", type=int, default=10, help="Parallel threads")
 
     # build
     p_build = subs.add_parser("build", help="Build SFT tasks from canonical reports")
@@ -126,9 +116,8 @@ def main() -> None:
     # all
     p_all = subs.add_parser("all", help="Run full pipeline")
     p_all.add_argument("--data-dir", required=True)
-    p_all.add_argument("--sync", action="store_true")
     p_all.add_argument("--limit", type=int, default=None)
-    p_all.add_argument("--poll-interval", type=int, default=60)
+    p_all.add_argument("--workers", type=int, default=10)
 
     args = parser.parse_args()
     {"parse": cmd_parse, "format": cmd_format, "build": cmd_build, "all": cmd_all}[

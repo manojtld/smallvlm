@@ -41,7 +41,9 @@ python -m preprocessing.run build --data-dir /path/to/extracted/dataset
 python -m preprocessing.run all --data-dir /path/to/extracted/dataset
 ```
 
-Requires `ANTHROPIC_API_KEY` env var for the format step.
+Requires `PORTKEY_API_KEY` and `PORTKEY_VIRTUAL_KEY` env vars for the format step.
+Uses `qwen/qwen3.6-flash` via Portkey → OpenRouter by default.
+Override the model with `PORTKEY_MODEL=qwen/qwen3.6-plus` (or any OpenRouter model ID).
 
 ### Data flow
 
