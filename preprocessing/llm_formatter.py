@@ -23,7 +23,6 @@ from typing import List, Optional
 from portkey_ai import Portkey
 
 from .schema import CanonicalReport, PathologyAttributes
-from .text_utils import clean_findings, clean_impression
 
 MODEL = os.environ.get("PORTKEY_MODEL", "qwen/qwen3.6-flash")
 
@@ -94,8 +93,8 @@ def _make_client() -> Portkey:
 
 
 def _make_user_content(record: dict) -> str:
-    findings = clean_findings(record.get("raw_findings") or "") or "none"
-    impression = clean_impression(record.get("raw_impression") or "") or "none"
+    findings = record.get("raw_findings") or "none"
+    impression = record.get("raw_impression") or "none"
     return f"FINDINGS: {findings}\n\nIMPRESSION: {impression}"
 
 
@@ -121,15 +120,15 @@ def _parse_llm_output(text: str, uid: int, raw: dict) -> CanonicalReport:
             recommendation=data.get("recommendation", ""),
             mesh_tags=raw.get("mesh_tags", []),
             pathology_json=pathology_json,
-            raw_findings=clean_findings(raw.get("raw_findings", "")),
-            raw_impression=clean_impression(raw.get("raw_impression", "")),
+            raw_findings=raw.get("raw_findings", ""),
+            raw_impression=raw.get("raw_impression", ""),
         )
     except (json.JSONDecodeError, TypeError, ValueError):
         return CanonicalReport(
             uid=uid,
             mesh_tags=raw.get("mesh_tags", []),
-            raw_findings=clean_findings(raw.get("raw_findings", "")),
-            raw_impression=clean_impression(raw.get("raw_impression", "")),
+            raw_findings=raw.get("raw_findings", ""),
+            raw_impression=raw.get("raw_impression", ""),
         )
 
 
