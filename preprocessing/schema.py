@@ -4,19 +4,22 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field
 
 
-class FindingAttributes(BaseModel):
-    severity: Optional[str] = None   # mild | moderate | severe
-    location: Optional[str] = None   # bilateral | right lower lobe | etc.
-    size: Optional[str] = None       # small | large | cm description
+class PathologyAttributes(BaseModel):
+    presence: bool = True
+    location: Optional[str] = None
+    size: Optional[str] = None
+    texture: Optional[str] = None
+    prominence_score: int = 5  # 0-5
+    # 0 = absent, 1 = questionable, 2 = possible, 3 = probable, 4 = likely, 5 = definite
 
 
 class CanonicalReport(BaseModel):
     uid: int
     findings: List[str] = Field(default_factory=list)
     impression: str = ""
-    attributes: Dict[str, FindingAttributes] = Field(default_factory=dict)
-    normal: bool = False
+    recommendation: str = ""
     mesh_tags: List[str] = Field(default_factory=list)
+    pathology_json: Dict[str, PathologyAttributes] = Field(default_factory=dict)
     # originals preserved for debugging / fallback
     raw_findings: str = ""
     raw_impression: str = ""

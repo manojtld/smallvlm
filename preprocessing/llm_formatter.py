@@ -6,7 +6,7 @@ Requires env vars:
   PORTKEY_VIRTUAL_KEY   - virtual key pointing to OpenRouter (e.g. openrouter-f6f680)
 
 Model: qwen/qwen3.6-flash by default (fast, cheap, 1M context).
-Set MODEL env var or pass model= to override.
+Set PORTKEY_MODEL env var to override.
 
 Processing uses a thread pool for parallelism and checkpoints results to disk
 so runs can be resumed after interruption.
@@ -22,7 +22,7 @@ from typing import List, Optional
 
 from portkey_ai import Portkey
 
-from .schema import CanonicalReport, FindingAttributes
+from .schema import CanonicalReport, PathologyAttributes
 from .text_utils import clean_findings, clean_impression
 
 MODEL = os.environ.get("PORTKEY_MODEL", "qwen/qwen3.6-flash")
@@ -31,21 +31,33 @@ SYSTEM_PROMPT = """\
 You are a radiology AI assistant. Convert the provided chest X-ray report into \
 structured JSON. Output ONLY valid JSON — no prose, no markdown fences.
 
-Schema:
+Output schema:
 {
   "findings": ["<finding as a short noun phrase>", ...],
-  "impression": "<clinical impression as a single string>",
-  "attributes": {
-    "<finding>": {
-      "severity": "<mild|moderate|severe or null>",
+  "impression": "<clinical conclusion only>",
+  "recommendation": "<follow-up or further imaging recommendation, or empty string>",
+  "pathology_json": {
+    "<finding name>": {
+      "presence": <true if present, false if explicitly absent>,
       "location": "<anatomical location or null>",
-      "size": "<size description or null>"
+      "size": "<size description or null>",
+      "texture": "<texture/character description or null>",
+      "prominence_score": <0-5>
     }
-  },
-  "normal": <true if explicitly normal, false otherwise>
+  }
 }
 
+Prominence score guide (0-5):
+  5 - Definite: stated as fact with no qualification ("cardiomegaly", "there is pleural effusion")
+  4 - Likely: "consistent with", "findings suggest", "appears to be"
+  3 - Probable: "likely", "probable", "probably"
+  2 - Possible: "possible", "possibly", "may represent", "cannot exclude"
+  1 - Questionable: "questionable", "differential includes", "consider", "rule out"
+  0 - Absent: "no", "no evidence of", "without", "absent" — set presence=false
+
 Rules for findings:
+- Include ALL findings mentioned — both present and absent (e.g. "No pleural effusion" \
+is a finding with presence=false, prominence_score=0).
 - Split compound findings into individual items.
 - The input may contain grammatically incomplete phrases where words were redacted \
 (e.g. "There are no of a pleural effusion", "cardiac with leads"). \
@@ -56,14 +68,16 @@ confidently interpret.
 
 Rules for impression:
 - Include only the clinical conclusion — what the radiologist determined from the study.
-- Exclude all administrative and communication content: phrases about findings being \
-discussed with the patient or physician, telephone communications, follow-up \
-scheduling, technologist notes, or any non-clinical statement.
-- Write it as one clean paragraph or numbered list matching the original clinical content.
+- Exclude all administrative content: findings discussed with patient/physician, \
+telephone communications, technologist notes, scheduling — anything non-clinical.
+
+Rules for recommendation:
+- Extract any explicit follow-up or imaging recommendation (e.g. "CT chest recommended", \
+"clinical correlation suggested", "short interval follow-up").
+- Leave as empty string if none is present.
 
 General:
-- Set normal=true only when the report states no abnormalities.
-- Use null (JSON null, not the string "null") for missing attribute values.
+- Use null (JSON null, not the string "null") for missing attribute fields.
 """
 
 
@@ -81,23 +95,27 @@ def _make_user_content(record: dict) -> str:
 
 
 def _parse_llm_output(text: str, uid: int, raw: dict) -> CanonicalReport:
-    # Strip markdown fences if the model wraps output despite instructions
     text = text.strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
     try:
         data = json.loads(text)
-        attributes = {
-            k: FindingAttributes(**v) if isinstance(v, dict) else FindingAttributes()
-            for k, v in data.get("attributes", {}).items()
-        }
+        pathology_json = {}
+        for k, v in data.get("pathology_json", {}).items():
+            if isinstance(v, dict):
+                # Clamp prominence_score to 0-5
+                v["prominence_score"] = max(0, min(5, int(v.get("prominence_score", 5))))
+                pathology_json[k] = PathologyAttributes(**v)
+            else:
+                pathology_json[k] = PathologyAttributes()
+
         return CanonicalReport(
             uid=uid,
             findings=data.get("findings", []),
             impression=data.get("impression", ""),
-            attributes=attributes,
-            normal=bool(data.get("normal", False)),
+            recommendation=data.get("recommendation", ""),
             mesh_tags=raw.get("mesh_tags", []),
+            pathology_json=pathology_json,
             raw_findings=clean_findings(raw.get("raw_findings", "")),
             raw_impression=clean_impression(raw.get("raw_impression", "")),
         )
@@ -113,7 +131,7 @@ def _parse_llm_output(text: str, uid: int, raw: dict) -> CanonicalReport:
 def _format_one(record: dict, client: Portkey) -> CanonicalReport:
     response = client.chat.completions.create(
         model=MODEL,
-        max_tokens=1024,
+        max_tokens=2048,
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": _make_user_content(record)},
@@ -136,16 +154,9 @@ def format_reports(
     Checkpoints results to `checkpoint_path` (JSONL) after each completed
     record so a run can be resumed after interruption — already-processed
     UIDs are skipped on restart.
-
-    Args:
-        records:         List of raw report dicts from report_parser.
-        checkpoint_path: Path to a JSONL file for incremental saves.
-                         Pass None to skip checkpointing.
-        workers:         Number of parallel threads (default 10).
     """
     client = _make_client()
 
-    # Load already-processed UIDs from checkpoint
     done_uids: set = set()
     results: List[CanonicalReport] = []
     if checkpoint_path and Path(checkpoint_path).exists():
