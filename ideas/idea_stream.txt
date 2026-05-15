@@ -1,0 +1,8 @@
+hallucination checks:
+    - patient names/ids/dates in the output
+    - mention of previous examinations or comparisons
+    - patient age or sex mentioned in the report
+
+
+
+

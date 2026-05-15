@@ -1,16 +1,16 @@
 """
-Run Qwen3.5-0.8B inference on CXR images for eval.
+Qwen VLM inference for CXR eval.
 
-Level 1 prompt: normal/abnormal classification
-Level 2 prompt: closed-vocab finding presence/absence
+Uses batched inference across a single GPU — each GPU replica gets a shard
+of the dataset and processes it in batches to saturate VRAM.
 
-Both predict_* methods return the raw model response alongside the parsed
-result so callers can save traces for inspection and debugging.
+Images are resized to IMAGE_SIZE before batching to ensure uniform patch counts.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -19,6 +19,7 @@ from PIL import Image
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
+IMAGE_SIZE = (1024, 1024)  # resize all images to this before batching
 
 LEVEL1_PROMPT = (
     "You are a radiologist. Look at this chest X-ray and answer with a single word only.\n"
@@ -58,19 +59,52 @@ class QwenEvaluator:
         self.device = device
         print("Model loaded.")
 
-    def _load_image(self, path: str) -> Image.Image:
-        return Image.open(path).convert("RGB")
+    def _load_image(self, path: str) -> Optional[Image.Image]:
+        if not path or not Path(path).exists():
+            return None
+        return Image.open(path).convert("RGB").resize(IMAGE_SIZE)
 
-    def _generate(self, image: Image.Image, prompt: str, max_new_tokens: int = 64,
-                  repetition_penalty: float = 1.0) -> str:
-        messages = [{"role": "user", "content": [
-            {"type": "image", "image": image},
-            {"type": "text",  "text": prompt},
-        ]}]
-        text = self.processor.apply_chat_template(
-            messages, tokenize=False, add_generation_prompt=True
-        )
-        inputs = self.processor(text=[text], images=[image], return_tensors="pt").to(self.device)
+    # ── Core batched generation ───────────────────────────────────────────────
+
+    def generate_batch(
+        self,
+        image_paths: List[str],
+        prompt: str,
+        max_new_tokens: int,
+        repetition_penalty: float = 1.0,
+    ) -> List[str]:
+        """
+        Run `prompt` on a batch of images. Returns one response string per path.
+        Paths that don't exist return an empty string.
+        """
+        results = [""] * len(image_paths)
+        images, valid_idx = [], []
+
+        for i, path in enumerate(image_paths):
+            img = self._load_image(path)
+            if img is not None:
+                images.append(img)
+                valid_idx.append(i)
+
+        if not images:
+            return results
+
+        texts = []
+        for img in images:
+            msgs = [{"role": "user", "content": [
+                {"type": "image", "image": img},
+                {"type": "text",  "text": prompt},
+            ]}]
+            texts.append(self.processor.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=True
+            ))
+
+        inputs = self.processor(
+            text=texts, images=images, return_tensors="pt", padding=True
+        ).to(self.device)
+
+        input_len = inputs["input_ids"].shape[1]
+
         with torch.no_grad():
             output_ids = self.model.generate(
                 **inputs,
@@ -78,10 +112,24 @@ class QwenEvaluator:
                 do_sample=False,
                 repetition_penalty=repetition_penalty,
             )
-        new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
-        return self.processor.decode(new_tokens, skip_special_tokens=True).strip()
 
-    # ── Parsing helpers (also used by batched worker) ─────────────────────────
+        for i, (orig_idx, out) in enumerate(zip(valid_idx, output_ids)):
+            new_tokens = out[input_len:]
+            results[orig_idx] = self.processor.decode(
+                new_tokens, skip_special_tokens=True
+            ).strip()
+
+        return results
+
+    # ── Parsing helpers ───────────────────────────────────────────────────────
+
+    def _parse_normal(self, raw: str) -> Optional[bool]:
+        lower = raw.lower()
+        if "normal" in lower and "abnormal" not in lower:
+            return True
+        if "abnormal" in lower:
+            return False
+        return None
 
     def _parse_labels(self, raw: str, labels: List[str]) -> Dict[str, Optional[bool]]:
         result = {label: None for label in labels}
@@ -119,7 +167,6 @@ class QwenEvaluator:
         return result
 
     def _parse_report(self, raw: str) -> Dict[str, str]:
-        import re
         section_re = re.compile(r"^\**\s*(FINDINGS|IMPRESSION)\s*:?\**\s*:?\s*", re.IGNORECASE)
         findings_lines, impression_lines = [], []
         current = None
@@ -141,45 +188,21 @@ class QwenEvaluator:
                 impression_lines.append(content)
         return {"findings": " ".join(findings_lines), "impression": " ".join(impression_lines)}
 
-    # ── Public single-sample API (kept for interactive use) ───────────────────
+    # ── Single-sample API (kept for interactive use) ──────────────────────────
 
     def predict_normal(self, image_path: str) -> Tuple[Optional[bool], str]:
-        """Returns (prediction, raw_response). prediction is True=normal, False=abnormal, None=unparseable."""
-        if not image_path or not Path(image_path).exists():
-            return None, ""
-        image = self._load_image(image_path)
-        raw = self._generate(image, LEVEL1_PROMPT, max_new_tokens=16)
-        lower = raw.lower()
-        if "normal" in lower and "abnormal" not in lower:
-            return True, raw
-        if "abnormal" in lower:
-            return False, raw
-        return None, raw
+        raws = self.generate_batch([image_path], LEVEL1_PROMPT, max_new_tokens=16)
+        raw = raws[0]
+        return self._parse_normal(raw), raw
 
     def predict_labels(self, image_path: str, labels: List[str]) -> Tuple[Dict[str, Optional[bool]], str]:
-        """Returns ({label: True/False/None}, raw_response)."""
-        result = {label: None for label in labels}
-        if not image_path or not Path(image_path).exists():
-            return result, ""
-
-        image = self._load_image(image_path)
-        label_list = "\n".join(f"- {l}" for l in labels)
-        prompt = LEVEL2_PROMPT_TEMPLATE.format(labels=label_list)
-        raw = self._generate(image, prompt, max_new_tokens=384)  # ~14 labels × avg 25 tokens each
-
+        raws = self.generate_batch([image_path], LEVEL2_PROMPT_TEMPLATE.format(
+            labels="\n".join(f"- {l}" for l in labels)), max_new_tokens=384)
+        raw = raws[0]
         return self._parse_labels(raw, labels), raw
 
     def predict_report(self, image_path: str) -> Tuple[Dict[str, str], str]:
-        """
-        Generate a free-text radiology report.
-        Returns ({"findings": str, "impression": str}, raw_response).
-        """
-        import re
-        result = {"findings": "", "impression": ""}
-        if not image_path or not Path(image_path).exists():
-            return result, ""
-
-        image = self._load_image(image_path)
-        raw = self._generate(image, LEVEL3_PROMPT, max_new_tokens=800, repetition_penalty=1.3)
-        result.update(self._parse_report(raw))
-        return result, raw
+        raws = self.generate_batch([image_path], LEVEL3_PROMPT, max_new_tokens=800,
+                                   repetition_penalty=1.3)
+        raw = raws[0]
+        return self._parse_report(raw), raw
