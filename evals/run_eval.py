@@ -5,9 +5,10 @@ Usage:
   python -m evals.run_eval
   python -m evals.run_eval --device cuda:0 --output evals/results/baseline.json
 
-Levels:
-  1 — normal/abnormal classification
-  2 — closed-vocab finding presence/absence (14 labels)
+Outputs (both always written):
+  <output>            — aggregated metrics JSON
+  <output>.traces.jsonl — per-sample traces with uid, image, ground truth,
+                          raw model response, and parsed prediction for every sample
 """
 
 from __future__ import annotations
@@ -33,44 +34,58 @@ def run(device: str = "cuda:0", output: str = None) -> dict:
     samples = load_test_split()
     evaluator = QwenEvaluator(device=device)
 
-    # ── Level 1: normal/abnormal ──────────────────────────────────────────────
-    l1_true, l1_pred = [], []
-    skipped_l1 = 0
+    out_path = Path(output) if output else RESULTS_DIR / "baseline_qwen35_08b.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    traces_path = out_path.with_suffix(".traces.jsonl")
 
-    # ── Level 2: per-label presence ──────────────────────────────────────────
+    l1_true, l1_pred = [], []
     l2_true = defaultdict(list)
     l2_pred = defaultdict(list)
-    skipped_l2 = 0
+    skipped_l1 = skipped_l2 = 0
 
     print(f"\nRunning eval on {len(samples)} samples...")
-    for sample in tqdm(samples):
-        image = sample.frontal_image
+    print(f"Traces → {traces_path}")
 
-        # Level 1
-        pred_normal = evaluator.predict_normal(image)
-        if pred_normal is None:
-            skipped_l1 += 1
-        else:
-            l1_true.append(sample.is_normal)
-            l1_pred.append(pred_normal)
+    with open(traces_path, "w") as traces_f:
+        for sample in tqdm(samples):
+            image = sample.frontal_image
+            trace = {
+                "uid": sample.uid,
+                "frontal_image": image,
+                "gt_normal": sample.is_normal,
+                "gt_problems": sample.problems,
+            }
 
-        # Level 2
-        pred_labels = evaluator.predict_labels(image, EVAL_LABELS)
-        has_any = any(v is not None for v in pred_labels.values())
-        if not has_any:
-            skipped_l2 += 1
-        else:
-            for label in EVAL_LABELS:
-                gt = label in sample.problems
-                pred = pred_labels.get(label)
-                if pred is not None:
-                    l2_true[label].append(gt)
-                    l2_pred[label].append(pred)
+            # Level 1
+            pred_normal, raw_l1 = evaluator.predict_normal(image)
+            trace["l1_raw"] = raw_l1
+            trace["l1_pred"] = pred_normal
+            if pred_normal is None:
+                skipped_l1 += 1
+            else:
+                l1_true.append(sample.is_normal)
+                l1_pred.append(pred_normal)
 
-    print(f"\nLevel 1 skipped (no image / unparseable): {skipped_l1}")
-    print(f"Level 2 skipped (no image / unparseable): {skipped_l2}")
+            # Level 2
+            pred_labels, raw_l2 = evaluator.predict_labels(image, EVAL_LABELS)
+            trace["l2_raw"] = raw_l2
+            trace["l2_pred"] = {k: v for k, v in pred_labels.items()}
+            has_any = any(v is not None for v in pred_labels.values())
+            if not has_any:
+                skipped_l2 += 1
+            else:
+                for label in EVAL_LABELS:
+                    gt = label in sample.problems
+                    pred = pred_labels.get(label)
+                    if pred is not None:
+                        l2_true[label].append(gt)
+                        l2_pred[label].append(pred)
 
-    # ── Compute metrics ───────────────────────────────────────────────────────
+            traces_f.write(json.dumps(trace) + "\n")
+            traces_f.flush()
+
+    print(f"\nLevel 1 skipped: {skipped_l1}  |  Level 2 skipped: {skipped_l2}")
+
     l1_metrics = binary_metrics(l1_true, l1_pred)
     l2_results = multilabel_metrics(dict(l2_true), dict(l2_pred), EVAL_LABELS)
 
@@ -84,11 +99,9 @@ def run(device: str = "cuda:0", output: str = None) -> dict:
         "level2": l2_results,
     }
 
-    # Save
-    out_path = Path(output) if output else RESULTS_DIR / "baseline_qwen35_08b.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(results, indent=2))
-    print(f"\nResults saved → {out_path}")
+    print(f"\nMetrics  → {out_path}")
+    print(f"Traces   → {traces_path}")
 
     return results
 

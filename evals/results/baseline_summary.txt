@@ -11,10 +11,24 @@
   TP=265 TN=9 FP=461 FN=2
 
 ── Level 2: Finding Presence (14 labels) ──────────────────
-  Macro F1          : 0.000
-  Macro Sensitivity : nan
-  Macro Specificity : nan
-  Macro Precision   : nan
+  Macro F1          : 0.127
+  Macro Sensitivity : 0.429
+  Macro Specificity : 0.000
+  Macro Precision   : 0.080
 
   Label                                    F1    Sens    Spec     N+
   --------------------------------------------------------------
+  Cardiomegaly                          0.500   1.000   0.000      4
+  Pleural Effusion                      0.167   1.000   0.000      1
+  Pulmonary Atelectasis                 0.000   0.000   0.000      0
+  Opacity                               0.533   1.000   0.000      4
+  Pulmonary Edema                       0.167   1.000   0.000      1
+  Pulmonary Congestion                  0.167   1.000   0.000      1
+  Emphysema                             0.000   0.000   0.000      0
+  Nodule                                0.000   0.000   0.000      0
+  Infiltrate                            0.000   0.000   0.000      0
+  Airspace Disease                      0.000   0.000   0.000      0
+  Calcinosis                            0.000   0.000   0.000      0
+  Calcified Granuloma                   0.000   0.000   0.000      0
+  Fractures, Bone                       0.000   0.000   0.000      0
+  Catheters, Indwelling                 0.250   1.000   0.000      1
