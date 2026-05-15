@@ -85,7 +85,7 @@ class QwenEvaluator:
         if not image_path or not Path(image_path).exists():
             return None, ""
         image = self._load_image(image_path)
-        raw = self._generate(image, LEVEL1_PROMPT, max_new_tokens=10)
+        raw = self._generate(image, LEVEL1_PROMPT, max_new_tokens=16)
         lower = raw.lower()
         if "normal" in lower and "abnormal" not in lower:
             return True, raw
@@ -102,7 +102,7 @@ class QwenEvaluator:
         image = self._load_image(image_path)
         label_list = "\n".join(f"- {l}" for l in labels)
         prompt = LEVEL2_PROMPT_TEMPLATE.format(labels=label_list)
-        raw = self._generate(image, prompt, max_new_tokens=512)
+        raw = self._generate(image, prompt, max_new_tokens=384)  # ~14 labels × avg 25 tokens each
 
         # Parse — try to handle the various JSON formats the model produces
         text = raw.strip()
@@ -153,7 +153,7 @@ class QwenEvaluator:
             return result, ""
 
         image = self._load_image(image_path)
-        raw = self._generate(image, LEVEL3_PROMPT, max_new_tokens=512, repetition_penalty=1.3)
+        raw = self._generate(image, LEVEL3_PROMPT, max_new_tokens=800, repetition_penalty=1.3)
 
         # Parse FINDINGS / IMPRESSION sections.
         # Handles both standalone headers ("**FINDINGS:**") and inline headers
