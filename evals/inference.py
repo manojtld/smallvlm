@@ -34,6 +34,14 @@ LEVEL2_PROMPT_TEMPLATE = (
     "Output format: {{\"Finding Name\": true/false, ...}}"
 )
 
+LEVEL3_PROMPT = (
+    "You are a radiologist. Write a structured radiology report for this chest X-ray.\n\n"
+    "FINDINGS:\n"
+    "List each radiological observation on a separate line.\n\n"
+    "IMPRESSION:\n"
+    "Summarize the key clinical conclusions in 1-3 sentences."
+)
+
 
 class QwenEvaluator:
     def __init__(self, device: str = "cuda:0", dtype=torch.bfloat16):
@@ -52,7 +60,8 @@ class QwenEvaluator:
     def _load_image(self, path: str) -> Image.Image:
         return Image.open(path).convert("RGB")
 
-    def _generate(self, image: Image.Image, prompt: str, max_new_tokens: int = 64) -> str:
+    def _generate(self, image: Image.Image, prompt: str, max_new_tokens: int = 64,
+                  repetition_penalty: float = 1.0) -> str:
         messages = [{"role": "user", "content": [
             {"type": "image", "image": image},
             {"type": "text",  "text": prompt},
@@ -62,7 +71,12 @@ class QwenEvaluator:
         )
         inputs = self.processor(text=[text], images=[image], return_tensors="pt").to(self.device)
         with torch.no_grad():
-            output_ids = self.model.generate(**inputs, max_new_tokens=max_new_tokens, do_sample=False)
+            output_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                repetition_penalty=repetition_penalty,
+            )
         new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
         return self.processor.decode(new_tokens, skip_special_tokens=True).strip()
 
@@ -126,4 +140,49 @@ class QwenEvaluator:
         except (json.JSONDecodeError, TypeError):
             pass
 
+        return result, raw
+
+    def predict_report(self, image_path: str) -> Tuple[Dict[str, str], str]:
+        """
+        Generate a free-text radiology report.
+        Returns ({"findings": str, "impression": str}, raw_response).
+        """
+        import re
+        result = {"findings": "", "impression": ""}
+        if not image_path or not Path(image_path).exists():
+            return result, ""
+
+        image = self._load_image(image_path)
+        raw = self._generate(image, LEVEL3_PROMPT, max_new_tokens=512, repetition_penalty=1.3)
+
+        # Parse FINDINGS / IMPRESSION sections.
+        # Handles both standalone headers ("**FINDINGS:**") and inline headers
+        # ("**Findings:** The heart is...") which the model commonly produces.
+        section_re = re.compile(
+            r"^\**\s*(FINDINGS|IMPRESSION)\s*:?\**\s*:?\s*", re.IGNORECASE
+        )
+        findings_lines, impression_lines = [], []
+        current = None
+        for line in raw.splitlines():
+            stripped = line.strip()
+            m = section_re.match(stripped)
+            if m:
+                current = m.group(1).lower()
+                remainder = stripped[m.end():].strip().lstrip("*- ")
+                if remainder:
+                    if current == "findings":
+                        findings_lines.append(remainder)
+                    elif current == "impression":
+                        impression_lines.append(remainder)
+                continue
+            content = stripped.lstrip("*- ")
+            if not content:
+                continue
+            if current == "findings":
+                findings_lines.append(content)
+            elif current == "impression":
+                impression_lines.append(content)
+
+        result["findings"] = " ".join(findings_lines)
+        result["impression"] = " ".join(impression_lines)
         return result, raw

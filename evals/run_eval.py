@@ -81,6 +81,12 @@ def run(device: str = "cuda:0", output: str = None) -> dict:
                         l2_true[label].append(gt)
                         l2_pred[label].append(pred)
 
+            # Level 3 — free-text report
+            report, raw_l3 = evaluator.predict_report(image)
+            trace["l3_raw"] = raw_l3
+            trace["l3_findings"] = report["findings"]
+            trace["l3_impression"] = report["impression"]
+
             traces_f.write(json.dumps(trace) + "\n")
             traces_f.flush()
 
