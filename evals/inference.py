@@ -44,12 +44,12 @@ LEVEL3_PROMPT = (
 
 
 class QwenEvaluator:
-    def __init__(self, device: str = "cuda:0", dtype=torch.bfloat16):
-        print(f"Loading {MODEL_ID} on {device}...")
-        self.processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+    def __init__(self, device: str = "cuda:0", dtype=torch.bfloat16, model_id: str = MODEL_ID):
+        print(f"Loading {model_id} on {device}...")
+        self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         self.processor.tokenizer.padding_side = "left"
         self.model = AutoModelForImageTextToText.from_pretrained(
-            MODEL_ID,
+            model_id,
             dtype=dtype,
             device_map=device,
             trust_remote_code=True,
