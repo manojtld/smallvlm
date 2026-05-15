@@ -45,10 +45,6 @@ LEVEL3_PROMPT = (
 
 class QwenEvaluator:
     def __init__(self, device: str = "cuda:0", dtype=torch.bfloat16):
-        # cuDNN init fails due to library version mismatch from environment churn.
-        # Conv3d (vision encoder patch_embed) works fine with the fallback PyTorch impl.
-        torch.backends.cudnn.enabled = False
-
         print(f"Loading {MODEL_ID} on {device}...")
         self.processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
         self.processor.tokenizer.padding_side = "left"
