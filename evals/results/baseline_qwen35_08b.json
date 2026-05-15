@@ -1,6 +1,7 @@
 {
   "model": "Qwen/Qwen3.5-0.8B",
   "n_samples": 771,
+  "n_gpus": 8,
   "level1": {
     "accuracy": 0.3718,
     "sensitivity": 0.9925,

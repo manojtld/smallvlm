@@ -26,7 +26,7 @@ import torch
 import torch.multiprocessing as mp
 from tqdm import tqdm
 
-from .dataset import EvalSample, load_test_split
+from .dataset import load_test_split
 from .inference import QwenEvaluator
 from .metrics import (
     binary_metrics, multilabel_metrics,
@@ -43,7 +43,7 @@ def _worker(rank: int, samples: list, tmp_path: str):
     evaluator = QwenEvaluator(device=device)
 
     with open(tmp_path, "w") as f:
-        for sample in tqdm(samples, desc=f"GPU {rank}", position=rank):
+        for sample in tqdm(samples, desc=f"GPU{rank}", position=rank, leave=False):
             image = sample.frontal_image
             trace = {
                 "uid": sample.uid,

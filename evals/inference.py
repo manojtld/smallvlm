@@ -45,8 +45,13 @@ LEVEL3_PROMPT = (
 
 class QwenEvaluator:
     def __init__(self, device: str = "cuda:0", dtype=torch.bfloat16):
+        # cuDNN init fails due to library version mismatch from environment churn.
+        # Conv3d (vision encoder patch_embed) works fine with the fallback PyTorch impl.
+        torch.backends.cudnn.enabled = False
+
         print(f"Loading {MODEL_ID} on {device}...")
         self.processor = AutoProcessor.from_pretrained(MODEL_ID, trust_remote_code=True)
+        self.processor.tokenizer.padding_side = "left"
         self.model = AutoModelForImageTextToText.from_pretrained(
             MODEL_ID,
             dtype=dtype,
@@ -80,6 +85,68 @@ class QwenEvaluator:
         new_tokens = output_ids[0][inputs["input_ids"].shape[1]:]
         return self.processor.decode(new_tokens, skip_special_tokens=True).strip()
 
+    # ── Parsing helpers (also used by batched worker) ─────────────────────────
+
+    def _parse_labels(self, raw: str, labels: List[str]) -> Dict[str, Optional[bool]]:
+        result = {label: None for label in labels}
+        text = raw.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        try:
+            data = json.loads(text)
+            if isinstance(data, dict):
+                for label in labels:
+                    if label in data:
+                        result[label] = bool(data[label])
+                    else:
+                        for k, v in data.items():
+                            if k.lower() == label.lower():
+                                result[label] = bool(v)
+                                break
+            elif isinstance(data, list):
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    name = item.get("r") or item.get("finding") or item.get("label") or item.get("name")
+                    val  = item.get("f") or item.get("present") or item.get("value") or item.get("found")
+                    if name is None or val is None:
+                        if len(item) == 1:
+                            name, val = next(iter(item.items()))
+                        else:
+                            continue
+                    for label in labels:
+                        if str(name).lower() == label.lower():
+                            result[label] = bool(val)
+                            break
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return result
+
+    def _parse_report(self, raw: str) -> Dict[str, str]:
+        import re
+        section_re = re.compile(r"^\**\s*(FINDINGS|IMPRESSION)\s*:?\**\s*:?\s*", re.IGNORECASE)
+        findings_lines, impression_lines = [], []
+        current = None
+        for line in raw.splitlines():
+            stripped = line.strip()
+            m = section_re.match(stripped)
+            if m:
+                current = m.group(1).lower()
+                remainder = stripped[m.end():].strip().lstrip("*- ")
+                if remainder:
+                    (findings_lines if current == "findings" else impression_lines).append(remainder)
+                continue
+            content = stripped.lstrip("*- ")
+            if not content:
+                continue
+            if current == "findings":
+                findings_lines.append(content)
+            elif current == "impression":
+                impression_lines.append(content)
+        return {"findings": " ".join(findings_lines), "impression": " ".join(impression_lines)}
+
+    # ── Public single-sample API (kept for interactive use) ───────────────────
+
     def predict_normal(self, image_path: str) -> Tuple[Optional[bool], str]:
         """Returns (prediction, raw_response). prediction is True=normal, False=abnormal, None=unparseable."""
         if not image_path or not Path(image_path).exists():
@@ -104,43 +171,7 @@ class QwenEvaluator:
         prompt = LEVEL2_PROMPT_TEMPLATE.format(labels=label_list)
         raw = self._generate(image, prompt, max_new_tokens=384)  # ~14 labels × avg 25 tokens each
 
-        # Parse — try to handle the various JSON formats the model produces
-        text = raw.strip()
-        if text.startswith("```"):
-            text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
-
-        try:
-            data = json.loads(text)
-            # Format 1: {"Label": true/false, ...}
-            if isinstance(data, dict):
-                for label in labels:
-                    if label in data:
-                        result[label] = bool(data[label])
-                    else:
-                        for k, v in data.items():
-                            if k.lower() == label.lower():
-                                result[label] = bool(v)
-                                break
-            # Format 2: [{"r": "Label", "f": true}, ...] — abbreviated keys
-            elif isinstance(data, list):
-                for item in data:
-                    if not isinstance(item, dict):
-                        continue
-                    name = item.get("r") or item.get("finding") or item.get("label") or item.get("name")
-                    val  = item.get("f") or item.get("present") or item.get("value") or item.get("found")
-                    if name is None or val is None:
-                        if len(item) == 1:
-                            name, val = next(iter(item.items()))
-                        else:
-                            continue
-                    for label in labels:
-                        if str(name).lower() == label.lower():
-                            result[label] = bool(val)
-                            break
-        except (json.JSONDecodeError, TypeError):
-            pass
-
-        return result, raw
+        return self._parse_labels(raw, labels), raw
 
     def predict_report(self, image_path: str) -> Tuple[Dict[str, str], str]:
         """
@@ -154,35 +185,5 @@ class QwenEvaluator:
 
         image = self._load_image(image_path)
         raw = self._generate(image, LEVEL3_PROMPT, max_new_tokens=800, repetition_penalty=1.3)
-
-        # Parse FINDINGS / IMPRESSION sections.
-        # Handles both standalone headers ("**FINDINGS:**") and inline headers
-        # ("**Findings:** The heart is...") which the model commonly produces.
-        section_re = re.compile(
-            r"^\**\s*(FINDINGS|IMPRESSION)\s*:?\**\s*:?\s*", re.IGNORECASE
-        )
-        findings_lines, impression_lines = [], []
-        current = None
-        for line in raw.splitlines():
-            stripped = line.strip()
-            m = section_re.match(stripped)
-            if m:
-                current = m.group(1).lower()
-                remainder = stripped[m.end():].strip().lstrip("*- ")
-                if remainder:
-                    if current == "findings":
-                        findings_lines.append(remainder)
-                    elif current == "impression":
-                        impression_lines.append(remainder)
-                continue
-            content = stripped.lstrip("*- ")
-            if not content:
-                continue
-            if current == "findings":
-                findings_lines.append(content)
-            elif current == "impression":
-                impression_lines.append(content)
-
-        result["findings"] = " ".join(findings_lines)
-        result["impression"] = " ".join(impression_lines)
+        result.update(self._parse_report(raw))
         return result, raw
