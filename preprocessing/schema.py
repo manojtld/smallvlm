@@ -20,6 +20,7 @@ class CanonicalReport(BaseModel):
     recommendation: str = ""
     mesh_tags: List[str] = Field(default_factory=list)
     pathology_json: Dict[str, PathologyAttributes] = Field(default_factory=dict)
+    primitive_observations: List[str] = Field(default_factory=list)
     # originals preserved for debugging / fallback
     raw_findings: str = ""
     raw_impression: str = ""

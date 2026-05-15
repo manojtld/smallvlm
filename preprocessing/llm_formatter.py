@@ -209,6 +209,131 @@ def format_reports(
     return results
 
 
+# ── Primitive observations ───────────────────────────────────────────────────
+
+PRIMITIVE_PROMPT = """\
+You are a radiologist describing what is physically visible in a chest X-ray image.
+
+Convert the findings below into primitive visual observations — describe only what can \
+actually be seen on the image, using basic radiological descriptors.
+
+Mapping guide:
+- Nodule / granuloma → small rounded opacity
+- Mass → large rounded opacity
+- Consolidation → homogeneous opacity with ill-defined borders
+- Infiltrate / airspace disease → opacity
+- Lobar or basilar atelectasis → opacity (basal, segmental, or lobar)
+- Discoid / platelike / subsegmental atelectasis → linear or band-like opacity
+- Fibrosis / cicatrix / scarring → linear or reticular opacity
+- Emphysema → increased lucency / hyperlucency
+- Bullous emphysema → focal area of increased lucency with thin wall
+- Pneumothorax → peripheral lucency without lung markings
+- Pleural effusion → homogeneous opacity at lung base
+- Pleural thickening → pleural soft tissue density
+- Cardiomegaly → enlarged cardiac silhouette
+- Pulmonary edema → bilateral perihilar opacity
+- Pulmonary congestion → prominent vascular markings
+- Calcinosis / calcified granuloma / calcification → calcified density
+- Catheters / pacemaker leads / surgical hardware → linear or curvilinear metallic density
+- Sternotomy wires → midline metallic density
+- Scoliosis / spinal deformity / osteophytes → skeletal deformity
+- Normal finding → no abnormal opacity, lucency, or density
+
+Rules:
+- Include location and laterality when available (e.g. "right lower lobe", "bilateral", "left base")
+- Include size/severity qualifiers when available (e.g. "small", "large", "mild", "dense", "patchy")
+- Do NOT use disease names or clinical diagnoses in the output
+- Keep each observation short — one phrase per item
+- For absent findings, always convert to primitive form: "No consolidation" → "no homogeneous opacity with ill-defined borders"
+- Output ONLY a JSON list of strings, no prose, no markdown fences
+"""
+
+
+def _extract_primitives_one(report: CanonicalReport, client: Portkey) -> List[str]:
+    findings_str = "\n".join(f"- {f}" for f in report.findings) if report.findings else (report.raw_findings or "none")
+    user_content = f"{findings_str}\n\nImpression for context: {report.impression or report.raw_impression or ''}"
+
+    delay = 5
+    for attempt in range(6):
+        try:
+            resp = client.chat.completions.create(
+                model=MODEL,
+                max_tokens=512,
+                messages=[
+                    {"role": "system", "content": PRIMITIVE_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+            )
+            text = (resp.choices[0].message.content or "").strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            return json.loads(text)
+        except Exception as e:
+            if attempt == 5:
+                return []
+            err = str(e)
+            if "429" in err or "500" in err or "rate" in err.lower() or "server" in err.lower():
+                time.sleep(delay)
+                delay = min(delay * 2, 60)
+            else:
+                return []
+
+
+def add_primitives(
+    reports: List[CanonicalReport],
+    checkpoint_path: Optional[str | Path] = None,
+    workers: int = 10,
+) -> List[CanonicalReport]:
+    """
+    Add primitive_observations to each CanonicalReport in-place.
+    Skips reports that already have non-empty primitive_observations.
+    Checkpoints after each completion.
+    """
+    client = _make_client()
+
+    # Build lookup from checkpoint if resuming
+    done: dict = {}
+    if checkpoint_path and Path(checkpoint_path).exists():
+        for r in load_canonical(checkpoint_path):
+            if r.primitive_observations:
+                done[r.uid] = r.primitive_observations
+        print(f"Resuming primitives: {len(done)} already done")
+
+    pending = [r for r in reports if r.uid not in done]
+    if not pending:
+        print("All primitives already extracted.")
+        for r in reports:
+            r.primitive_observations = done.get(r.uid, r.primitive_observations)
+        return reports
+
+    checkpoint_file = open(checkpoint_path, "a") if checkpoint_path else None
+
+    try:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_extract_primitives_one, r, client): r for r in pending}
+            completed = 0
+            for future in as_completed(futures):
+                report = futures[future]
+                primitives = future.result()
+                report.primitive_observations = primitives
+                done[report.uid] = primitives
+                if checkpoint_file:
+                    checkpoint_file.write(report.model_dump_json() + "\n")
+                    checkpoint_file.flush()
+                completed += 1
+                if completed % 50 == 0 or completed == len(pending):
+                    print(f"  {completed}/{len(pending)} done")
+    finally:
+        if checkpoint_file:
+            checkpoint_file.close()
+
+    # Apply results to all reports (including those from checkpoint)
+    for r in reports:
+        if r.uid in done:
+            r.primitive_observations = done[r.uid]
+    return reports
+
+
 # ── I/O helpers ───────────────────────────────────────────────────────────────
 
 def save_canonical(reports: List[CanonicalReport], output_path: str | Path) -> None:

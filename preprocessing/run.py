@@ -43,6 +43,14 @@ def cmd_format(args: argparse.Namespace) -> None:
     save_canonical(reports, args.output)
 
 
+def cmd_primitives(args: argparse.Namespace) -> None:
+    from .llm_formatter import add_primitives, load_canonical, save_canonical
+    reports = load_canonical(args.input)
+    checkpoint = Path(args.output).with_suffix(".primitives_checkpoint.jsonl")
+    reports = add_primitives(reports, checkpoint_path=checkpoint, workers=args.workers)
+    save_canonical(reports, args.output)
+
+
 def cmd_build(args: argparse.Namespace) -> None:
     from .llm_formatter import load_canonical
     from .report_parser import load_projections
@@ -106,6 +114,12 @@ def main() -> None:
     p_fmt.add_argument("--limit", type=int, default=None, help="Process only first N records")
     p_fmt.add_argument("--workers", type=int, default=10, help="Parallel threads")
 
+    # primitives
+    p_prim = subs.add_parser("primitives", help="Add primitive_observations to canonical.jsonl")
+    p_prim.add_argument("--input",   default=DATA_DIR / "canonical.jsonl")
+    p_prim.add_argument("--output",  default=DATA_DIR / "canonical.jsonl")
+    p_prim.add_argument("--workers", type=int, default=15)
+
     # build
     p_build = subs.add_parser("build", help="Build SFT tasks from canonical reports")
     p_build.add_argument("--input", default=DATA_DIR / "canonical.jsonl")
@@ -120,9 +134,8 @@ def main() -> None:
     p_all.add_argument("--workers", type=int, default=10)
 
     args = parser.parse_args()
-    {"parse": cmd_parse, "format": cmd_format, "build": cmd_build, "all": cmd_all}[
-        args.command
-    ](args)
+    {"parse": cmd_parse, "format": cmd_format, "primitives": cmd_primitives,
+     "build": cmd_build, "all": cmd_all}[args.command](args)
 
 
 if __name__ == "__main__":
