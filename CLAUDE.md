@@ -33,6 +33,17 @@ Key facts:
 - 1,426 reports contain `XXXX` tokens (de-identified proper nouns) — passed through as-is
 - `Problems` column = cleaner version of `MeSH` (no anatomical qualifiers)
 
+## Checkpoints
+
+All model checkpoints live under `/raid/manoj/smallvlm/checkpoints/`:
+
+| Path | Description |
+|---|---|
+| `base_qwen35_08b/` | Qwen3.5-0.8B base model (HuggingFace weights, bf16) |
+| `base_qwen35_2b/` | Qwen3.5-2B base model (HuggingFace weights, bf16) |
+
+Fine-tuned checkpoints will be added here as `sft_qwen35_08b/`, `rl_qwen35_08b/`, etc.
+
 ## Preprocessing Pipeline
 
 The `preprocessing/` folder converts raw reports into SFT training data via three steps:
