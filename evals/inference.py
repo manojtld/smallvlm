@@ -186,7 +186,10 @@ class QwenEvaluator:
                 findings_lines.append(content)
             elif current == "impression":
                 impression_lines.append(content)
-        return {"findings": " ".join(findings_lines), "impression": " ".join(impression_lines)}
+        return {
+            "l3_findings": " ".join(findings_lines),
+            "l3_impression": " ".join(impression_lines),
+        }
 
     # ── Single-sample API (kept for interactive use) ──────────────────────────
 
@@ -205,4 +208,5 @@ class QwenEvaluator:
         raws = self.generate_batch([image_path], LEVEL3_PROMPT, max_new_tokens=800,
                                    repetition_penalty=1.3)
         raw = raws[0]
-        return self._parse_report(raw), raw
+        parsed = self._parse_report(raw)
+        return {"findings": parsed["l3_findings"], "impression": parsed["l3_impression"]}, raw
