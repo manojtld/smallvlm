@@ -1,0 +1,35 @@
+==============================================================
+  BASELINE: Qwen3.5-2B (zero-shot, no fine-tuning)
+  Test samples: 771
+==============================================================
+
+── Level 1: Normal / Abnormal ─────────────────────────────
+  Accuracy    : 0.460
+  Sensitivity : 0.989  (recall for abnormal)
+  Specificity : 0.160  (recall for normal)
+  Precision   : 0.401
+  F1          : 0.570
+  TP=264  TN=75  FP=395  FN=3
+
+── Level 2: Finding Presence/Absence (14 labels) ──────────
+  Macro F1          : 0.288
+  Macro Sensitivity : 0.565
+  Macro Specificity : 0.919
+  Macro Precision   : 0.234
+
+  Label                                    F1    Sens    Spec     N+
+  ------------------------------------------------------------
+  Cardiomegaly                          0.476   0.914   0.798     70
+  Pleural Effusion                      0.558   0.889   0.951     27
+  Pulmonary Atelectasis                 0.362   0.434   0.925     53
+  Opacity                               0.473   0.718   0.828     85
+  Pulmonary Edema                       0.197   0.875   0.923      8
+  Pulmonary Congestion                  0.216   0.727   0.924     11
+  Emphysema                             0.057   0.222   0.919      9
+  Nodule                                0.208   0.217   0.972     23
+  Infiltrate                            0.125   0.714   0.907      7
+  Airspace Disease                      0.256   0.615   0.883     26
+  Calcinosis                            0.244   0.175   0.978     57
+  Calcified Granuloma                   0.359   0.311   0.973     45
+  Fractures, Bone                       0.200   0.250   0.979     12
+  Catheters, Indwelling                 0.305   0.842   0.902     19

@@ -1,0 +1,15 @@
+==============================================================
+  BASELINE: Qwen3.5-0.8B (zero-shot, no fine-tuning)
+  Test samples: 771
+==============================================================
+
+── Level 1: Normal / Abnormal ─────────────────────────────
+  Accuracy    : 0.376
+  Sensitivity : 0.993  (recall for abnormal)
+  Specificity : 0.025  (recall for normal)
+  Precision   : 0.366
+  F1          : 0.535
+  TP=265  TN=12  FP=458  FN=2
+
+── Level 2: Finding Presence/Absence (14 labels) ──────────
+  No parseable L2 outputs — model did not follow JSON format.

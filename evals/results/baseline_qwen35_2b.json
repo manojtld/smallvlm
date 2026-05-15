@@ -1,0 +1,195 @@
+{
+  "model": "Qwen/Qwen3.5-2B",
+  "n_samples": 771,
+  "n_gpus": 8,
+  "level1": {
+    "accuracy": 0.46,
+    "sensitivity": 0.9888,
+    "specificity": 0.1596,
+    "precision": 0.4006,
+    "f1": 0.5702,
+    "tp": 264,
+    "tn": 75,
+    "fp": 395,
+    "fn": 3,
+    "n": 737
+  },
+  "level2": {
+    "per_label": {
+      "Cardiomegaly": {
+        "accuracy": 0.8087,
+        "sensitivity": 0.9143,
+        "specificity": 0.7976,
+        "precision": 0.3216,
+        "f1": 0.4758,
+        "tp": 64,
+        "tn": 532,
+        "fp": 135,
+        "fn": 6,
+        "n": 737
+      },
+      "Pleural Effusion": {
+        "accuracy": 0.9484,
+        "sensitivity": 0.8889,
+        "specificity": 0.9507,
+        "precision": 0.4068,
+        "f1": 0.5581,
+        "tp": 24,
+        "tn": 675,
+        "fp": 35,
+        "fn": 3,
+        "n": 737
+      },
+      "Pulmonary Atelectasis": {
+        "accuracy": 0.8901,
+        "sensitivity": 0.434,
+        "specificity": 0.9254,
+        "precision": 0.3108,
+        "f1": 0.3622,
+        "tp": 23,
+        "tn": 633,
+        "fp": 51,
+        "fn": 30,
+        "n": 737
+      },
+      "Opacity": {
+        "accuracy": 0.8155,
+        "sensitivity": 0.7176,
+        "specificity": 0.8282,
+        "precision": 0.3526,
+        "f1": 0.4729,
+        "tp": 61,
+        "tn": 540,
+        "fp": 112,
+        "fn": 24,
+        "n": 737
+      },
+      "Pulmonary Edema": {
+        "accuracy": 0.9227,
+        "sensitivity": 0.875,
+        "specificity": 0.9232,
+        "precision": 0.1111,
+        "f1": 0.1972,
+        "tp": 7,
+        "tn": 673,
+        "fp": 56,
+        "fn": 1,
+        "n": 737
+      },
+      "Pulmonary Congestion": {
+        "accuracy": 0.9213,
+        "sensitivity": 0.7273,
+        "specificity": 0.9242,
+        "precision": 0.127,
+        "f1": 0.2162,
+        "tp": 8,
+        "tn": 671,
+        "fp": 55,
+        "fn": 3,
+        "n": 737
+      },
+      "Emphysema": {
+        "accuracy": 0.9104,
+        "sensitivity": 0.2222,
+        "specificity": 0.919,
+        "precision": 0.0328,
+        "f1": 0.0571,
+        "tp": 2,
+        "tn": 669,
+        "fp": 59,
+        "fn": 7,
+        "n": 737
+      },
+      "Nodule": {
+        "accuracy": 0.9484,
+        "sensitivity": 0.2174,
+        "specificity": 0.972,
+        "precision": 0.2,
+        "f1": 0.2083,
+        "tp": 5,
+        "tn": 694,
+        "fp": 20,
+        "fn": 18,
+        "n": 737
+      },
+      "Infiltrate": {
+        "accuracy": 0.905,
+        "sensitivity": 0.7143,
+        "specificity": 0.9068,
+        "precision": 0.0685,
+        "f1": 0.125,
+        "tp": 5,
+        "tn": 662,
+        "fp": 68,
+        "fn": 2,
+        "n": 737
+      },
+      "Airspace Disease": {
+        "accuracy": 0.8738,
+        "sensitivity": 0.6154,
+        "specificity": 0.8833,
+        "precision": 0.1616,
+        "f1": 0.256,
+        "tp": 16,
+        "tn": 628,
+        "fp": 83,
+        "fn": 10,
+        "n": 737
+      },
+      "Calcinosis": {
+        "accuracy": 0.9159,
+        "sensitivity": 0.1754,
+        "specificity": 0.9779,
+        "precision": 0.4,
+        "f1": 0.2439,
+        "tp": 10,
+        "tn": 665,
+        "fp": 15,
+        "fn": 47,
+        "n": 737
+      },
+      "Calcified Granuloma": {
+        "accuracy": 0.9322,
+        "sensitivity": 0.3111,
+        "specificity": 0.9725,
+        "precision": 0.4242,
+        "f1": 0.359,
+        "tp": 14,
+        "tn": 673,
+        "fp": 19,
+        "fn": 31,
+        "n": 737
+      },
+      "Fractures, Bone": {
+        "accuracy": 0.9674,
+        "sensitivity": 0.25,
+        "specificity": 0.9793,
+        "precision": 0.1667,
+        "f1": 0.2,
+        "tp": 3,
+        "tn": 710,
+        "fp": 15,
+        "fn": 9,
+        "n": 737
+      },
+      "Catheters, Indwelling": {
+        "accuracy": 0.9009,
+        "sensitivity": 0.8421,
+        "specificity": 0.9025,
+        "precision": 0.186,
+        "f1": 0.3048,
+        "tp": 16,
+        "tn": 648,
+        "fp": 70,
+        "fn": 3,
+        "n": 737
+      }
+    },
+    "macro": {
+      "macro_f1": 0.2883,
+      "macro_sensitivity": 0.5646,
+      "macro_specificity": 0.9188,
+      "macro_precision": 0.2335
+    }
+  }
+}
