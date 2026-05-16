@@ -107,6 +107,59 @@ class CXRSFTDataset(Dataset):
             })
 
         print(f"CXRSFTDataset phase={phase} split={split}: {len(self.samples)} samples, tasks={self.tasks}")
+        if split == "train":
+            self._print_distribution()
+
+    def _print_distribution(self):
+        n_normal = sum(1 for s in self.samples if not s["problems"])
+        print(f"  normal={n_normal} ({100*n_normal/len(self.samples):.1f}%)  "
+              f"abnormal={len(self.samples)-n_normal} ({100*(len(self.samples)-n_normal)/len(self.samples):.1f}%)")
+
+    def get_sample_weights(self) -> List[float]:
+        """
+        Compute per-sample weights for WeightedRandomSampler.
+
+        Strategy:
+          - Normal samples: pooled weight = 0.4 (40% of draws go to normals)
+          - Abnormal samples: pooled weight = 0.6, distributed by inverse label freq
+            so rarer findings get proportionally more draws within the abnormal pool.
+        """
+        from evals.vocab import EVAL_LABELS
+        from collections import Counter
+
+        normal_idx, abnormal_idx = [], []
+        for i, s in enumerate(self.samples):
+            if not s["problems"]:
+                normal_idx.append(i)
+            else:
+                abnormal_idx.append(i)
+
+        # Per-label frequency for inverse-frequency weighting within abnormals
+        label_counts: Counter = Counter()
+        for i in abnormal_idx:
+            for p in self.samples[i]["problems"]:
+                if p in EVAL_LABELS:
+                    label_counts[p] += 1
+
+        def abnormal_weight(s) -> float:
+            # Weight = sum of inverse frequencies of present eval labels
+            # Falls back to 1.0 if no eval labels match
+            w = sum(1.0 / label_counts[p] for p in s["problems"] if p in label_counts)
+            return w if w > 0 else 1.0 / len(abnormal_idx)
+
+        # Pool budgets: 40% for normals, 60% for abnormals
+        normal_unit  = 0.4 / len(normal_idx)   if normal_idx   else 0.0
+        abnormal_raw = {i: abnormal_weight(self.samples[i]) for i in abnormal_idx}
+        total_raw    = sum(abnormal_raw.values())
+        abnormal_budget = 0.6
+
+        weights = [0.0] * len(self.samples)
+        for i in normal_idx:
+            weights[i] = normal_unit
+        for i in abnormal_idx:
+            weights[i] = abnormal_budget * abnormal_raw[i] / total_raw
+
+        return weights
 
     def __len__(self) -> int:
         return len(self.samples)

@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 import torch
+from torch.utils.data import WeightedRandomSampler
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForImageTextToText, AutoProcessor, Trainer, TrainingArguments
 
@@ -98,6 +99,15 @@ def main():
     val_ds   = CXRSFTDataset(phase=args.phase, split="val",   augment=False)
     collator = CXRCollator(processor, max_length=args.max_len)
 
+    # Weighted sampler: 40% normal, 60% abnormal weighted by inverse label freq
+    sample_weights = train_ds.get_sample_weights()
+    sampler = WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(train_ds),
+        replacement=True,
+    )
+    print(f"WeightedRandomSampler: {sum(1 for w in sample_weights if w > 0)} non-zero weights")
+
     # ── Training args ─────────────────────────────────────────────────────────
     training_args = TrainingArguments(
         output_dir=args.output,
@@ -125,7 +135,11 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
-    trainer = Trainer(
+    class WeightedTrainer(Trainer):
+        def _get_train_sampler(self):
+            return sampler
+
+    trainer = WeightedTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
