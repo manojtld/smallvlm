@@ -1,0 +1,18 @@
+==================================================================
+  LLM Eval — sft_full_5ep_2b_sampleloss
+  Traces : sft_full_5ep_2b_sampleloss.traces.jsonl
+  Scored : 768 samples
+==================================================================
+
+  Accuracy       (0-10, higher=better)  mean=1.55   median=0.0
+  Completeness   (0-10, higher=better)  mean=1.65   median=0.0
+  Hallucination  (0-10, higher=cleaner) mean=9.46   median=10.0
+
+  Accuracy distribution (0=worst, 10=best):
+  0:563  1: 13  2: 30  3: 12  4: 26  5: 11  6: 20  7:  9  8: 44  9: 14  10: 26
+
+  Completeness distribution:
+  0:563  1:  4  2: 16  3: 11  4: 25  5: 37  6: 10  7: 27  8: 35  9: 16  10: 24
+
+  Hallucination distribution (10=clean, 0=heavily hallucinated):
+  0:  3  1: 10  2:  7  3:  7  4:  2  5: 17  6: 14  7:  4  8:  9  9:  7  10:688

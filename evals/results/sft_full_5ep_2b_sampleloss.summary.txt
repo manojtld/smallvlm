@@ -1,0 +1,35 @@
+================================================================
+  Model   : /raid3/manoj/smallvlm/checkpoints/sft_full_5ep_2b_sampleloss
+  Samples : 771
+================================================================
+
+── Level 1: Normal / Abnormal ──────────────────────────────
+  Accuracy    : 0.521
+  Sensitivity : 0.978  (recall for abnormal)
+  Specificity : 0.262  (recall for normal)
+  Precision   : 0.429
+  F1          : 0.597
+  TP=261  TN=123  FP=347  FN=6
+
+── Level 2: Finding Presence (14 labels) ───────────────────
+  Macro F1          : 0.237
+  Macro Sensitivity : 0.200
+  Macro Specificity : 0.990
+  Macro Precision   : 0.374
+
+  Label                                    F1    Sens    Spec     N+
+  --------------------------------------------------------------
+  Cardiomegaly                          0.603   0.543   0.973     70
+  Pleural Effusion                      0.655   0.704   0.983     27
+  Pulmonary Atelectasis                 0.242   0.151   0.993     53
+  Opacity                               0.175   0.106   0.986     85
+  Pulmonary Edema                       0.143   0.125   0.993      8
+  Pulmonary Congestion                  0.000   0.000   0.992     11
+  Emphysema                             0.000   0.000   0.992      9
+  Nodule                                0.162   0.130   0.985     23
+  Infiltrate                            0.000   0.000   0.999      7
+  Airspace Disease                      0.067   0.038   0.996     26
+  Calcinosis                            0.254   0.158   0.993     57
+  Calcified Granuloma                   0.218   0.133   0.994     45
+  Fractures, Bone                       0.118   0.083   0.995     12
+  Catheters, Indwelling                 0.686   0.632   0.994     19
