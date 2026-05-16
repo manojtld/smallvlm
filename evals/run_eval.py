@@ -44,7 +44,8 @@ def _batches(lst, n):
         yield lst[i:i + n]
 
 
-def _worker(rank: int, samples: list, traces_path: str, lock: mp.Lock, model_id: str):
+def _worker(rank: int, samples: list, traces_path: str, lock: mp.Lock,
+            model_id: str, thinking: bool = False):
     """
     Process samples in batches. For each batch: run L1, L2, L3, then immediately
     write traces so results stream into the file throughout the run.
@@ -52,7 +53,7 @@ def _worker(rank: int, samples: list, traces_path: str, lock: mp.Lock, model_id:
     from .inference import LEVEL2_PROMPT_TEMPLATE, LEVEL3_PROMPT, LEVEL1_PROMPT
 
     device = f"cuda:{rank}"
-    evaluator = QwenEvaluator(device=device, model_id=model_id)
+    evaluator = QwenEvaluator(device=device, model_id=model_id, thinking=thinking)
     l2_prompt = LEVEL2_PROMPT_TEMPLATE.format(labels="\n".join(f"- {l}" for l in EVAL_LABELS))
 
     for batch in tqdm(list(_batches(samples, BATCH_SIZE)),
@@ -129,9 +130,11 @@ def _save_summary(results: dict, summary_path: Path) -> None:
     print(f"Summary  → {summary_path}")
 
 
-def run(n_gpus: int = 1, output: str = None, model_id: str = "Qwen/Qwen3.5-0.8B") -> dict:
+def run(n_gpus: int = 1, output: str = None, model_id: str = "Qwen/Qwen3.5-0.8B",
+        thinking: bool = False) -> dict:
     samples = load_test_split()
-    out_path = Path(output) if output else RESULTS_DIR / f"{_model_slug(model_id)}.json"
+    slug = _model_slug(model_id) + ("_thinking" if thinking else "")
+    out_path = Path(output) if output else RESULTS_DIR / f"{slug}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     traces_path = out_path.with_suffix(".traces.jsonl")
 
@@ -147,11 +150,11 @@ def run(n_gpus: int = 1, output: str = None, model_id: str = "Qwen/Qwen3.5-0.8B"
     lock = mp.Lock()
 
     if n_gpus == 1:
-        _worker(0, shards[0], str(traces_path), lock, model_id)
+        _worker(0, shards[0], str(traces_path), lock, model_id, thinking)
     else:
         processes = []
         for rank in range(n_gpus):
-            p = mp.Process(target=_worker, args=(rank, shards[rank], str(traces_path), lock, model_id))
+            p = mp.Process(target=_worker, args=(rank, shards[rank], str(traces_path), lock, model_id, thinking))
             p.start()
             processes.append(p)
         for p in processes:
@@ -197,6 +200,7 @@ def run(n_gpus: int = 1, output: str = None, model_id: str = "Qwen/Qwen3.5-0.8B"
 
     results = {
         "model": model_id,
+        "thinking": thinking,
         "n_samples": len(samples),
         "n_gpus": n_gpus,
         "level1": l1_metrics,
@@ -215,8 +219,9 @@ def main():
     parser.add_argument("--gpus", type=int, default=torch.cuda.device_count())
     parser.add_argument("--output", default=None)
     parser.add_argument("--model", default="Qwen/Qwen3.5-0.8B")
+    parser.add_argument("--thinking", action="store_true", help="Enable thinking mode")
     args = parser.parse_args()
-    run(n_gpus=args.gpus, output=args.output, model_id=args.model)
+    run(n_gpus=args.gpus, output=args.output, model_id=args.model, thinking=args.thinking)
 
 
 if __name__ == "__main__":

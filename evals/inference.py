@@ -21,6 +21,9 @@ from transformers import AutoModelForImageTextToText, AutoProcessor
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
 IMAGE_SIZE = (512, 512)  # resize all images to this before batching
 
+import re as _re
+_THINK_RE = _re.compile(r"<think>.*?</think>", _re.DOTALL)
+
 LEVEL1_PROMPT = (
     "You are a radiologist. Look at this chest X-ray and answer with a single word only.\n"
     "Is this chest X-ray normal or abnormal?\n"
@@ -45,8 +48,9 @@ LEVEL3_PROMPT = (
 
 
 class QwenEvaluator:
-    def __init__(self, device: str = "cuda:0", dtype=torch.bfloat16, model_id: str = MODEL_ID):
-        print(f"Loading {model_id} on {device}...")
+    def __init__(self, device: str = "cuda:0", dtype=torch.bfloat16,
+                 model_id: str = MODEL_ID, thinking: bool = False):
+        print(f"Loading {model_id} on {device}  (thinking={'on' if thinking else 'off'})...")
         self.processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
         self.processor.tokenizer.padding_side = "left"
         self.model = AutoModelForImageTextToText.from_pretrained(
@@ -57,6 +61,7 @@ class QwenEvaluator:
         )
         self.model.eval()
         self.device = device
+        self.thinking = thinking
         print("Model loaded.")
 
     def _load_image(self, path: str) -> Optional[Image.Image]:
@@ -96,7 +101,8 @@ class QwenEvaluator:
                 {"type": "text",  "text": prompt},
             ]}]
             texts.append(self.processor.apply_chat_template(
-                msgs, tokenize=False, add_generation_prompt=True
+                msgs, tokenize=False, add_generation_prompt=True,
+                enable_thinking=self.thinking,
             ))
 
         inputs = self.processor(
@@ -104,20 +110,23 @@ class QwenEvaluator:
         ).to(self.device)
 
         input_len = inputs["input_ids"].shape[1]
+        # Extra token budget for thinking — model reasons before answering
+        effective_max = max_new_tokens * (4 if self.thinking else 1)
 
         with torch.no_grad():
             output_ids = self.model.generate(
                 **inputs,
-                max_new_tokens=max_new_tokens,
+                max_new_tokens=effective_max,
                 do_sample=False,
                 repetition_penalty=repetition_penalty,
             )
 
         for i, (orig_idx, out) in enumerate(zip(valid_idx, output_ids)):
             new_tokens = out[input_len:]
-            results[orig_idx] = self.processor.decode(
-                new_tokens, skip_special_tokens=True
-            ).strip()
+            raw = self.processor.decode(new_tokens, skip_special_tokens=True).strip()
+            # Strip <think>...</think> blocks, keep only the final answer
+            clean = _THINK_RE.sub("", raw).strip()
+            results[orig_idx] = clean if clean else raw
 
         return results
 
