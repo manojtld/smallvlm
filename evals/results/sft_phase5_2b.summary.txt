@@ -1,0 +1,34 @@
+==============================================================
+  SFT Phase 5 vs Baseline — Qwen3.5-2B
+==============================================================
+
+── Level 1: Normal / Abnormal ─────────────────────────────
+                          Baseline         SFT         Δ
+  accuracy                   0.460       0.482    +0.022
+  sensitivity                0.989       0.985    -0.004
+  specificity                0.160       0.196    +0.036
+  f1                         0.570       0.579    +0.009
+  TP=263 TN=92 FP=378 FN=4
+
+── Level 2: Macro ──────────────────────────────────────────
+  macro_f1                   0.288       0.204    -0.084
+  macro_sensitivity          0.565       0.149    -0.416
+  macro_specificity          0.919       0.996    +0.077
+  macro_precision            0.234       0.486    +0.253
+
+── Level 2: Per-label F1 ───────────────────────────────────
+  Label                                  Base     SFT        Δ
+  Cardiomegaly                          0.476   0.481   +0.005  
+  Pleural Effusion                      0.558   0.682   +0.124 ↑
+  Pulmonary Atelectasis                 0.362   0.250   -0.112 ↓
+  Opacity                               0.473   0.214   -0.259 ↓
+  Pulmonary Edema                       0.197   0.000   -0.197 ↓
+  Pulmonary Congestion                  0.216   0.167   -0.050 ↓
+  Emphysema                             0.057   0.000   -0.057 ↓
+  Nodule                                0.208   0.083   -0.125 ↓
+  Infiltrate                            0.125   0.000   -0.125 ↓
+  Airspace Disease                      0.256   0.000   -0.256 ↓
+  Calcinosis                            0.244   0.216   -0.028 ↓
+  Calcified Granuloma                   0.359   0.157   -0.202 ↓
+  Fractures, Bone                       0.200   0.000   -0.200 ↓
+  Catheters, Indwelling                 0.305   0.606   +0.301 ↑
