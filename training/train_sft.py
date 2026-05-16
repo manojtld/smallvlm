@@ -218,13 +218,16 @@ def main():
                 pass
             accum.clear()
 
-        def on_log(self, args, state, control, logs=None, **kwargs):
-            # Called by HF Trainer at logging_steps — flush accumulated train losses
-            self._flush_task_losses(self._task_loss_accum, "train", state.global_step)
+        def log(self, logs, *args, **kwargs):
+            # Trainer.log() is called every logging_steps — flush train per-task losses
+            super().log(logs, *args, **kwargs)
+            self._flush_task_losses(self._task_loss_accum, "train", self.state.global_step)
 
-        def on_evaluate(self, args, state, control, metrics=None, **kwargs):
-            # Called after full eval pass — flush accumulated eval losses
-            self._flush_task_losses(self._eval_task_loss_accum, "eval", state.global_step)
+        def evaluate(self, *args, **kwargs):
+            # Trainer.evaluate() runs the full eval loop — flush eval per-task losses after
+            result = super().evaluate(*args, **kwargs)
+            self._flush_task_losses(self._eval_task_loss_accum, "eval", self.state.global_step)
+            return result
 
     trainer = WeightedTrainer(
         model=model,
