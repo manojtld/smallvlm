@@ -35,12 +35,14 @@ Key facts:
 
 ## Checkpoints
 
-All model checkpoints live under `/raid/manoj/smallvlm/checkpoints/`:
+All model checkpoints live under `/raid3/manoj/smallvlm/models/checkpoints/`:
 
 | Path | Description |
 |---|---|
 | `base_qwen35_08b/` | Qwen3.5-0.8B base model (HuggingFace weights, bf16) |
 | `base_qwen35_2b/` | Qwen3.5-2B base model (HuggingFace weights, bf16) |
+| `sft_phase{N}_2b/` | SFT curriculum checkpoints (phases 1-5) |
+| `sft_phase5_2b_5ep/` | Phase 5 with 5 epochs + weighted sampler |
 
 Fine-tuned checkpoints will be added here as `sft_qwen35_08b/`, `rl_qwen35_08b/`, etc.
 

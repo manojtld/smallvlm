@@ -43,8 +43,8 @@ LORA_TARGET_MODULES = [
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser()
     p.add_argument("--phase",       type=int,   required=True, choices=[1, 2, 3, 4, 5])
-    p.add_argument("--base",        default=os.environ.get("SMALLVLM_DATA", "/raid3/manoj/smallvlm")
-                                              + "/checkpoints/base_qwen35_2b")
+    CKPT_ROOT = os.environ.get("SMALLVLM_DATA", "/raid3/manoj/smallvlm") + "/models/checkpoints"
+    p.add_argument("--base",        default=CKPT_ROOT + "/base_qwen35_2b")
     p.add_argument("--output",      required=True)
     p.add_argument("--epochs",      type=int,   default=2)
     p.add_argument("--batch-size",  type=int,   default=2, help="Per-device batch size")
