@@ -53,7 +53,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-r",      type=int,   default=32)
     p.add_argument("--lora-alpha",  type=int,   default=32)
     p.add_argument("--max-len",     type=int,   default=8192)
-    p.add_argument("--eval-steps",  type=int,   default=200)
+    p.add_argument("--eval-steps",  type=int,   default=None,
+                   help="Eval every N steps. Default: every 0.5 epochs.")
     p.add_argument("--clearml-project", default="smallvlm")
     p.add_argument("--clearml-task",    default=None)
     return p.parse_args()
@@ -99,6 +100,11 @@ def main():
     val_ds   = CXRSFTDataset(phase=args.phase, split="val",   augment=False)
     collator = CXRCollator(processor, max_length=args.max_len)
 
+    # Eval every 0.5 epochs by default
+    steps_per_epoch = len(train_ds) // (args.batch_size * 4 * args.grad_accum)  # 4 GPUs
+    eval_steps = args.eval_steps if args.eval_steps else max(1, steps_per_epoch // 2)
+    print(f"steps/epoch={steps_per_epoch}  eval every {eval_steps} steps (0.5 epochs)")
+
     # Weighted sampler: 40% normal, 60% abnormal weighted by inverse label freq
     sample_weights = train_ds.get_sample_weights()
     sampler = WeightedRandomSampler(
@@ -122,9 +128,9 @@ def main():
         bf16=True,
         logging_steps=10,
         eval_strategy="steps",
-        eval_steps=args.eval_steps,
+        eval_steps=eval_steps,
         save_strategy="steps",
-        save_steps=args.eval_steps,
+        save_steps=eval_steps,
         save_total_limit=3,
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
@@ -136,7 +142,7 @@ def main():
     )
 
     class WeightedTrainer(Trainer):
-        def _get_train_sampler(self):
+        def _get_train_sampler(self, *args, **kwargs):
             return sampler
 
     trainer = WeightedTrainer(
