@@ -56,6 +56,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--max-len",     type=int,   default=8192)
     p.add_argument("--eval-steps",  type=int,   default=None,
                    help="Eval every N steps. Default: every 0.5 epochs.")
+    p.add_argument("--clf-loss-weight", type=float, default=1.0,
+                   help="Loss multiplier for tag_classification task (default 1.0).")
     p.add_argument("--clearml-project", default="smallvlm")
     p.add_argument("--clearml-task",    default=None)
     return p.parse_args()
@@ -152,6 +154,16 @@ def main():
         "structured_json":        "json",
     }
 
+    # Per-task loss weights — upweight classification since it's sampled less often
+    TASK_LOSS_WEIGHT = {
+        "findings":          1.0,
+        "impression":        1.0,
+        "tag_classification": float(args.clf_loss_weight),
+        "primitive_observations": 1.0,
+        "mesh_tags":         1.0,
+        "structured_json":   1.0,
+    }
+
     # Grab the ClearML logger from the callback so compute_loss can use it
     _clearml_logger = getattr(clearml_cb, "_logger", None)
     # Try to extract it after Task.init via the callback internals
@@ -190,7 +202,15 @@ def main():
             ).view(shift_labels.shape)                            # (B, T-1)
             valid_mask = (shift_labels != -100).float()
             per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
-            loss = per_sample.mean()
+            # Apply per-task loss weights before averaging
+            if task_types:
+                weights = torch.tensor(
+                    [TASK_LOSS_WEIGHT.get(t, 1.0) for t in task_types],
+                    device=per_sample.device, dtype=per_sample.dtype
+                )
+                loss = (per_sample * weights).mean()
+            else:
+                loss = per_sample.mean()
 
             # Accumulate per-task losses for ClearML
             if task_types:

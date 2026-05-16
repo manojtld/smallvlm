@@ -59,6 +59,8 @@ PHASES = {
     3: ["primitive_observations", "tag_classification", "mesh_tags"],
     4: ["primitive_observations", "tag_classification", "mesh_tags", "findings", "impression"],
     5: ["primitive_observations", "tag_classification", "mesh_tags", "findings", "impression", "structured_json"],
+    # Phase 6: findings+impression primary, classification secondary (with upweighted loss)
+    6: ["findings", "findings", "impression", "impression", "tag_classification"],
 }
 
 # ── Target builders ────────────────────────────────────────────────────────────
