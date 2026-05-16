@@ -170,7 +170,21 @@ def main():
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
             task_types = inputs.pop("task_types", None)
             outputs = model(**inputs)
-            loss = outputs.loss
+
+            # Recompute loss as mean-of-per-sample-losses (not mean-of-all-tokens).
+            # This gives equal weight to every sample regardless of target length,
+            # preventing long tasks (structured_json) from dominating shorter ones
+            # (primitives, tag_classification) in the gradient signal.
+            labels = inputs["labels"]
+            per_tok = F.cross_entropy(
+                outputs.logits.view(-1, outputs.logits.size(-1)),
+                labels.view(-1),
+                ignore_index=-100,
+                reduction="none",
+            ).view(labels.shape)
+            valid_mask = (labels != -100).float()
+            per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
+            loss = per_sample.mean()
 
             is_eval = return_outputs  # Trainer passes return_outputs=True during eval
             log_train = (not is_eval) and self.state.global_step % 10 == 0
@@ -178,17 +192,6 @@ def main():
 
             if task_types and _clearml_logger and (log_train or log_eval):
                 try:
-                    labels = inputs["labels"]
-                    logits = outputs.logits
-                    per_tok = F.cross_entropy(
-                        logits.view(-1, logits.size(-1)),
-                        labels.view(-1),
-                        ignore_index=-100,
-                        reduction="none",
-                    ).view(labels.shape)
-                    valid_mask = (labels != -100).float()
-                    per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
-
                     family_losses: dict = {}
                     for i, task in enumerate(task_types):
                         fam = TASK_FAMILY.get(task, task)
