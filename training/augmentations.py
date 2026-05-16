@@ -17,28 +17,27 @@ import torchvision.transforms.functional as TF
 def augment_image(img: Image.Image, p: float = 0.5) -> Image.Image:
     """Apply random augmentations to a single image."""
 
-    # Random crop (scale 0.85–1.0, then resize back)
-    if random.random() < p:
-        w, h = img.size
-        scale = random.uniform(0.85, 1.0)
-        crop_w, crop_h = int(w * scale), int(h * scale)
-        x = random.randint(0, w - crop_w)
-        y = random.randint(0, h - crop_h)
-        img = img.crop((x, y, x + crop_w, y + crop_h)).resize((w, h), Image.BILINEAR)
+    # Random crop (scale 0.7–0.9, then resize back) — always applied
+    w, h = img.size
+    scale = random.uniform(0.7, 0.9)
+    crop_w, crop_h = int(w * scale), int(h * scale)
+    x = random.randint(0, w - crop_w)
+    y = random.randint(0, h - crop_h)
+    img = img.crop((x, y, x + crop_w, y + crop_h)).resize((w, h), Image.BILINEAR)
 
-    # Brightness ±20%
+    # Brightness ±35%
     if random.random() < p:
-        factor = random.uniform(0.8, 1.2)
+        factor = random.uniform(0.65, 1.35)
         img = ImageEnhance.Brightness(img).enhance(factor)
 
-    # Contrast ±20%
+    # Contrast ±35%
     if random.random() < p:
-        factor = random.uniform(0.8, 1.2)
+        factor = random.uniform(0.65, 1.35)
         img = ImageEnhance.Contrast(img).enhance(factor)
 
-    # Gamma (0.8–1.2) via lookup table
+    # Gamma (0.6–1.5) via lookup table
     if random.random() < p:
-        gamma = random.uniform(0.8, 1.2)
+        gamma = random.uniform(0.6, 1.5)
         img = TF.adjust_gamma(img, gamma)
 
     return img
