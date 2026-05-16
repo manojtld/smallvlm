@@ -167,14 +167,15 @@ def main():
         def _get_train_sampler(self, *args, **kwargs):
             return sampler
 
+        # Accumulators for per-task losses — flushed when HF Trainer logs
+        _task_loss_accum: dict = {}     # train: {family: [losses]}
+        _eval_task_loss_accum: dict = {}  # eval: {family: [losses]}
+
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
             task_types = inputs.pop("task_types", None)
             outputs = model(**inputs)
 
-            # Recompute loss as mean-of-per-sample-losses (not mean-of-all-tokens).
-            # This gives equal weight to every sample regardless of target length,
-            # preventing long tasks (structured_json) from dominating shorter ones
-            # (primitives, tag_classification) in the gradient signal.
+            # Sample-level mean: equal weight per sample regardless of target length
             labels = inputs["labels"]
             per_tok = F.cross_entropy(
                 outputs.logits.view(-1, outputs.logits.size(-1)),
@@ -186,30 +187,38 @@ def main():
             per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
             loss = per_sample.mean()
 
-            is_eval = return_outputs  # Trainer passes return_outputs=True during eval
-            log_train = (not is_eval) and self.state.global_step % 10 == 0
-            log_eval  = is_eval  # always log per-task losses on eval
-
-            if task_types and _clearml_logger and (log_train or log_eval):
-                try:
-                    family_losses: dict = {}
-                    for i, task in enumerate(task_types):
-                        fam = TASK_FAMILY.get(task, task)
-                        family_losses.setdefault(fam, []).append(per_sample[i].item())
-
-                    split = "eval" if is_eval else "train"
-                    step  = self.state.global_step
-                    for fam, vals in family_losses.items():
-                        _clearml_logger.report_scalar(
-                            title=f"{split}/loss_by_task",
-                            series=fam,
-                            value=sum(vals) / len(vals),
-                            iteration=step,
-                        )
-                except Exception:
-                    pass
+            # Accumulate per-task losses — logged in on_log / on_evaluate callbacks
+            if task_types:
+                is_eval = return_outputs
+                accum = self._eval_task_loss_accum if is_eval else self._task_loss_accum
+                for i, task in enumerate(task_types):
+                    fam = TASK_FAMILY.get(task, task)
+                    accum.setdefault(fam, []).append(per_sample[i].item())
 
             return (loss, outputs) if return_outputs else loss
+
+        def _flush_task_losses(self, accum: dict, split: str, step: int):
+            if not accum or not _clearml_logger:
+                return
+            try:
+                for fam, vals in accum.items():
+                    _clearml_logger.report_scalar(
+                        title=f"{split}/loss_by_task",
+                        series=fam,
+                        value=sum(vals) / len(vals),
+                        iteration=step,
+                    )
+            except Exception:
+                pass
+            accum.clear()
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            # Called by HF Trainer at logging_steps — flush accumulated train losses
+            self._flush_task_losses(self._task_loss_accum, "train", state.global_step)
+
+        def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+            # Called after full eval pass — flush accumulated eval losses
+            self._flush_task_losses(self._eval_task_loss_accum, "eval", state.global_step)
 
     trainer = WeightedTrainer(
         model=model,
