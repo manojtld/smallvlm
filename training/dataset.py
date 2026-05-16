@@ -9,6 +9,7 @@ Train/test split is enforced using the fixed split from evals/data/test_split.js
 from __future__ import annotations
 
 import json
+import os
 import random
 from pathlib import Path
 from typing import List, Optional
@@ -20,7 +21,7 @@ from preprocessing.llm_formatter import load_canonical
 from training.augmentations import prepare_views
 from training.tasks import PHASES, PROMPTS, build_target
 
-DATA_DIR = Path("/raid/manoj/smallvlm")
+DATA_DIR = Path(os.environ.get("SMALLVLM_DATA", "/raid3/manoj/smallvlm"))
 CANONICAL_PATH = DATA_DIR / "data" / "canonical.jsonl"
 PROJECTIONS_CSV = DATA_DIR / "raddar/chest-xrays-indiana-university/versions/2/indiana_projections.csv"
 REPORTS_CSV     = DATA_DIR / "raddar/chest-xrays-indiana-university/versions/2/indiana_reports.csv"
@@ -62,13 +63,15 @@ def _load_problems() -> dict:
 
 
 class CXRSFTDataset(Dataset):
+    column_names = None  # TRL SFTTrainer checks for this; None → inferred from first item keys
+
     def __init__(
         self,
         phase: int,
         split: str = "train",
         augment: bool = True,
         drop_prob: float = 0.2,
-        image_size: tuple = (1024, 1024),
+        image_size: tuple = (512, 512),
         seed: int = 42,
     ):
         assert split in ("train", "val")

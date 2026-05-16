@@ -48,7 +48,7 @@ def prepare_views(
     lateral_path: Optional[str],
     drop_prob: float = 0.2,
     augment: bool = True,
-    image_size: tuple = (1024, 1024),
+    image_size: tuple = (512, 512),
 ) -> list[Image.Image]:
     """
     Load, augment, and apply view dropout.

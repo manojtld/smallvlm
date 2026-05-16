@@ -19,7 +19,7 @@ from PIL import Image
 from transformers import AutoModelForImageTextToText, AutoProcessor
 
 MODEL_ID = "Qwen/Qwen3.5-0.8B"
-IMAGE_SIZE = (1024, 1024)  # resize all images to this before batching
+IMAGE_SIZE = (512, 512)  # resize all images to this before batching
 
 LEVEL1_PROMPT = (
     "You are a radiologist. Look at this chest X-ray and answer with a single word only.\n"
