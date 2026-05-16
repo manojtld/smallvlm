@@ -52,22 +52,27 @@ def load_traces(traces_path: Path) -> list:
 
 def format_summary(model_name: str, summary: dict, traces_path: Path) -> str:
     lines = [
-        "=" * 62,
+        "=" * 66,
         f"  LLM Eval — {model_name}",
         f"  Traces : {traces_path.name}",
         f"  Scored : {summary['n']} samples",
-        "=" * 62,
+        "=" * 66,
         "",
-        f"  Accuracy    (0-10)   mean={summary['accuracy_mean']:.2f}   "
-        f"median={summary['accuracy_median']:.1f}",
-        f"  Completeness(0-10)   mean={summary['completeness_mean']:.2f}   "
-        f"median={summary['completeness_median']:.1f}",
+        f"  Accuracy       (0-10, higher=better)  "
+        f"mean={summary['accuracy_mean']:.2f}   median={summary['accuracy_median']:.1f}",
+        f"  Completeness   (0-10, higher=better)  "
+        f"mean={summary['completeness_mean']:.2f}   median={summary['completeness_median']:.1f}",
+        f"  Hallucination  (0-10, higher=cleaner) "
+        f"mean={summary['hallucination_mean']:.2f}   median={summary['hallucination_median']:.1f}",
         "",
-        "  Accuracy distribution:",
+        "  Accuracy distribution (0=worst, 10=best):",
         "  " + "  ".join(f"{k}:{v:3d}" for k, v in sorted(summary["accuracy_dist"].items(), key=lambda x: int(x[0]))),
         "",
         "  Completeness distribution:",
         "  " + "  ".join(f"{k}:{v:3d}" for k, v in sorted(summary["completeness_dist"].items(), key=lambda x: int(x[0]))),
+        "",
+        "  Hallucination distribution (10=clean, 0=heavily hallucinated):",
+        "  " + "  ".join(f"{k}:{v:3d}" for k, v in sorted(summary["hallucination_dist"].items(), key=lambda x: int(x[0]))),
     ]
     return "\n".join(lines)
 

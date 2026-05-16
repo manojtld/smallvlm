@@ -1,0 +1,29 @@
+Data:
+    - More images, preferably in millions
+    - Add reasoning chains and thinking in the text output - asp/ontology style 
+    - Synthetic data generated from frontier VLMs - distil general knowledge or mentions of common
+      observations like pacemaker, tubes, artefacts that reports usually miss
+    - Grounded thinking - segmentation masks/bounding boxes for all relevant pathologies
+    - Reasoning should follow Localize -> characterize -> diagnose to mitigate hallucinations
+    - Curate a reasonably sized dataset for comparison - multiple images per patient at different
+      timepoints, with clear comparisons
+
+
+Model:
+    - Experiment with larger architectures - till 8-32b
+    - Add a pretrained(self supervised or clip) vision encoder to replace or augment the default
+      image encoder in the VLM. Critical for 3D modalities
+    - Add classification & segmentation model outputs(raw or thresholded) into the input context
+      of the VLM
+
+  SFT:
+    - First priority is to retain the general language capability of the model
+        - 5-10% of the training data needs to be general image/video caption data and high quality
+          text reasoning data
+        - helps tremendously in the later RL phase since RL relies on the model being able to 
+          produce diverse reasoning chains that can be trained with GRPO/GSPO
+    - Track and optimize losses separately for reasoning/observation/scoring sections
+    - 
+
+
+Eval:

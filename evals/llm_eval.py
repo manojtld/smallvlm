@@ -41,7 +41,7 @@ JUDGE_PROMPT = """\
 You are an expert radiologist evaluating the quality of an AI-generated chest X-ray report \
 against a ground truth report written by a radiologist.
 
-Score the AI report on two dimensions. Output ONLY valid JSON — no prose, no markdown fences.
+Score the AI report on THREE dimensions. Output ONLY valid JSON — no prose, no markdown fences.
 
 ## Ground Truth Report
 FINDINGS: {gt_findings}
@@ -72,17 +72,35 @@ minor osteophytes, small calcinosis.
 - 1-3: Only named findings with no descriptive detail
 - 0: No findings stated or completely uninformative output
 
+### hallucination (0-10): Absence of non-clinical or fabricated content
+Higher score = cleaner report (fewer hallucinations). Penalise ANY of:
+- Patient or physician names, patient age/sex/gender (unless directly clinically relevant)
+- References to prior studies, previous images, or comparison exams
+  ("compared to prior", "stable since", "interval change", "no change from previous")
+- Specific dates, hospital names, clinic locations, referring department
+- Administrative or communication content (discussed with patient, phone call, etc.)
+- Content that cannot be observed from a single chest X-ray image alone
+
+Scoring:
+- 10: Purely visual radiological observations, zero non-clinical content
+- 8-9: One very minor non-clinical phrase (e.g. a single generic qualifier)
+- 5-7: Moderate issues — 1-2 comparison references or vague demographic references
+- 2-4: Clear hallucination — patient details, specific dates, or multiple comparison refs
+- 0-1: Severe — extensive non-clinical content, names, dates, or completely fabricated content
+
 ## Output Schema
 {{
   "accuracy_score": <0-10>,
   "completeness_score": <0-10>,
-  "accuracy_reasoning": "<one sentence explaining the accuracy score>",
-  "completeness_reasoning": "<one sentence explaining the completeness score>"
+  "hallucination_score": <0-10>,
+  "accuracy_reasoning": "<one sentence>",
+  "completeness_reasoning": "<one sentence>",
+  "hallucination_reasoning": "<one sentence citing the specific hallucinated content if any>"
 }}
 
 Important: Judge based on clinical content, not wording. A normal study correctly \
 identified as normal should score 10/10 on accuracy even if worded differently.
-If the AI output is empty or garbled, score 0 on both dimensions.
+If the AI output is empty, score accuracy=0, completeness=0, hallucination=10.
 """
 
 
@@ -122,17 +140,21 @@ def _score_one(
             data = json.loads(raw)
             return {
                 "uid": uid,
-                "accuracy_score": float(data.get("accuracy_score", 0)),
-                "completeness_score": float(data.get("completeness_score", 0)),
-                "accuracy_reasoning": data.get("accuracy_reasoning", ""),
-                "completeness_reasoning": data.get("completeness_reasoning", ""),
+                "accuracy_score":        float(data.get("accuracy_score", 0)),
+                "completeness_score":    float(data.get("completeness_score", 0)),
+                "hallucination_score":   float(data.get("hallucination_score", 10)),
+                "accuracy_reasoning":    data.get("accuracy_reasoning", ""),
+                "completeness_reasoning":data.get("completeness_reasoning", ""),
+                "hallucination_reasoning":data.get("hallucination_reasoning", ""),
                 "error": None,
             }
         except Exception as e:
             err = str(e)
             if attempt == 5:
-                return {"uid": uid, "accuracy_score": None, "completeness_score": None,
-                        "accuracy_reasoning": "", "completeness_reasoning": "", "error": err}
+                return {"uid": uid,
+                        "accuracy_score": None, "completeness_score": None, "hallucination_score": None,
+                        "accuracy_reasoning": "", "completeness_reasoning": "", "hallucination_reasoning": "",
+                        "error": err}
             if "429" in err or "500" in err or "rate" in err.lower() or "server" in err.lower():
                 time.sleep(delay)
                 delay = min(delay * 2, 60)
@@ -201,14 +223,18 @@ def summarize(results: List[Dict]) -> Dict:
     valid = [r for r in results if r.get("accuracy_score") is not None]
     if not valid:
         return {}
-    acc  = [r["accuracy_score"] for r in valid]
-    comp = [r["completeness_score"] for r in valid]
+    acc  = [r["accuracy_score"]      for r in valid]
+    comp = [r["completeness_score"]  for r in valid]
+    hall = [r["hallucination_score"] for r in valid]
     return {
         "n": len(valid),
-        "accuracy_mean":      round(sum(acc) / len(acc), 3),
-        "accuracy_median":    round(sorted(acc)[len(acc) // 2], 3),
-        "completeness_mean":  round(sum(comp) / len(comp), 3),
-        "completeness_median":round(sorted(comp)[len(comp) // 2], 3),
-        "accuracy_dist":      {str(i): sum(1 for s in acc  if int(s) == i) for i in range(11)},
-        "completeness_dist":  {str(i): sum(1 for s in comp if int(s) == i) for i in range(11)},
+        "accuracy_mean":          round(sum(acc)  / len(acc),  3),
+        "accuracy_median":        round(sorted(acc)[len(acc) // 2],   3),
+        "completeness_mean":      round(sum(comp) / len(comp), 3),
+        "completeness_median":    round(sorted(comp)[len(comp) // 2], 3),
+        "hallucination_mean":     round(sum(hall) / len(hall), 3),
+        "hallucination_median":   round(sorted(hall)[len(hall) // 2], 3),
+        "accuracy_dist":          {str(i): sum(1 for s in acc  if int(s) == i) for i in range(11)},
+        "completeness_dist":      {str(i): sum(1 for s in comp if int(s) == i) for i in range(11)},
+        "hallucination_dist":     {str(i): sum(1 for s in hall if int(s) == i) for i in range(11)},
     }
