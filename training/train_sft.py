@@ -24,6 +24,7 @@ import sys
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from torch.utils.data import WeightedRandomSampler
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForImageTextToText, AutoProcessor, Trainer, TrainingArguments
@@ -141,9 +142,67 @@ def main():
         ddp_find_unused_parameters=False,
     )
 
+    # Group task types into families for cleaner ClearML plots
+    TASK_FAMILY = {
+        "primitive_observations": "primitives",
+        "tag_classification":     "classification",
+        "mesh_tags":              "mesh_tags",
+        "findings":               "findings_impression",
+        "impression":             "findings_impression",
+        "structured_json":        "json",
+    }
+
+    # Grab the ClearML logger from the callback so compute_loss can use it
+    _clearml_logger = getattr(clearml_cb, "_logger", None)
+    # Try to extract it after Task.init via the callback internals
+    try:
+        from clearml import Task
+        _task = Task.current_task()
+        if _task:
+            _clearml_logger = _task.get_logger()
+    except Exception:
+        pass
+
     class WeightedTrainer(Trainer):
         def _get_train_sampler(self, *args, **kwargs):
             return sampler
+
+        def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+            task_types = inputs.pop("task_types", None)
+            outputs = model(**inputs)
+            loss = outputs.loss
+
+            # Per-task loss logging — only on rank 0 to avoid duplicate logs
+            if task_types and _clearml_logger and self.state.global_step % 10 == 0:
+                try:
+                    labels = inputs["labels"]                       # (B, T)
+                    logits = outputs.logits                          # (B, T, V)
+                    per_tok = F.cross_entropy(
+                        logits.view(-1, logits.size(-1)),
+                        labels.view(-1),
+                        ignore_index=-100,
+                        reduction="none",
+                    ).view(labels.shape)                            # (B, T)
+                    valid_mask = (labels != -100).float()
+                    per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
+
+                    family_losses: dict = {}
+                    for i, task in enumerate(task_types):
+                        fam = TASK_FAMILY.get(task, task)
+                        family_losses.setdefault(fam, []).append(per_sample[i].item())
+
+                    step = self.state.global_step
+                    for fam, vals in family_losses.items():
+                        _clearml_logger.report_scalar(
+                            title=f"train/loss_by_task",
+                            series=fam,
+                            value=sum(vals) / len(vals),
+                            iteration=step,
+                        )
+                except Exception:
+                    pass  # never crash training over logging
+
+            return (loss, outputs) if return_outputs else loss
 
     trainer = WeightedTrainer(
         model=model,

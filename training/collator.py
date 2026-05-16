@@ -22,6 +22,9 @@ class CXRCollator:
         if not valid:
             return {}
 
+        # Preserve task types as a plain list (non-tensor, passed through by Trainer)
+        task_types = [b["task"] for b in valid]
+
         texts, all_images = [], []
 
         for sample in valid:
@@ -78,4 +81,5 @@ class CXRCollator:
                     labels[i, :last_assistant_start + len(assistant_token)] = -100
 
         inputs["labels"] = labels
+        inputs["task_types"] = task_types  # list[str], popped in compute_loss before model call
         return inputs
