@@ -35,7 +35,7 @@ from typing import Dict, List, Optional
 
 from portkey_ai import Portkey
 
-MODEL = os.environ.get("PORTKEY_EVAL_MODEL", "qwen/qwen3.6-plus")
+MODEL = os.environ.get("PORTKEY_EVAL_MODEL", "qwen/qwen3.6-flash")
 
 JUDGE_PROMPT = """\
 You are an expert radiologist evaluating the quality of an AI-generated chest X-ray report \
