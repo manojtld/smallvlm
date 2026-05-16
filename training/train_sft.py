@@ -172,17 +172,20 @@ def main():
             outputs = model(**inputs)
             loss = outputs.loss
 
-            # Per-task loss logging — only on rank 0 to avoid duplicate logs
-            if task_types and _clearml_logger and self.state.global_step % 10 == 0:
+            is_eval = return_outputs  # Trainer passes return_outputs=True during eval
+            log_train = (not is_eval) and self.state.global_step % 10 == 0
+            log_eval  = is_eval  # always log per-task losses on eval
+
+            if task_types and _clearml_logger and (log_train or log_eval):
                 try:
-                    labels = inputs["labels"]                       # (B, T)
-                    logits = outputs.logits                          # (B, T, V)
+                    labels = inputs["labels"]
+                    logits = outputs.logits
                     per_tok = F.cross_entropy(
                         logits.view(-1, logits.size(-1)),
                         labels.view(-1),
                         ignore_index=-100,
                         reduction="none",
-                    ).view(labels.shape)                            # (B, T)
+                    ).view(labels.shape)
                     valid_mask = (labels != -100).float()
                     per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
 
@@ -191,16 +194,17 @@ def main():
                         fam = TASK_FAMILY.get(task, task)
                         family_losses.setdefault(fam, []).append(per_sample[i].item())
 
-                    step = self.state.global_step
+                    split = "eval" if is_eval else "train"
+                    step  = self.state.global_step
                     for fam, vals in family_losses.items():
                         _clearml_logger.report_scalar(
-                            title=f"train/loss_by_task",
+                            title=f"{split}/loss_by_task",
                             series=fam,
                             value=sum(vals) / len(vals),
                             iteration=step,
                         )
                 except Exception:
-                    pass  # never crash training over logging
+                    pass
 
             return (loss, outputs) if return_outputs else loss
 
