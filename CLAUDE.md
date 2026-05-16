@@ -35,7 +35,7 @@ Key facts:
 
 ## Checkpoints
 
-All model checkpoints live under `/raid3/manoj/smallvlm/models/checkpoints/`:
+All model checkpoints live under `/raid3/manoj/smallvlm/checkpoints/` (move to `models/checkpoints/` pending):
 
 | Path | Description |
 |---|---|
