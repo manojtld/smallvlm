@@ -23,7 +23,19 @@ Model:
         - helps tremendously in the later RL phase since RL relies on the model being able to 
           produce diverse reasoning chains that can be trained with GRPO/GSPO
     - Track and optimize losses separately for reasoning/observation/scoring sections
-    - 
-
+  
+  RL:
+    - Monitor KL divergence closely and have tighter constraints
+    - Scaling up number of rollouts and the number of rewards
+    - Specific reward for guideline following and sound reasoning
+    - Research on how to weigh different rewards so it aligns with the final goal of generating
+      clincally useful reports
+    - Curriculum and efficiency:
+        - Schedule the training to go from easy/small reasoning chains -> hard/long reasoning chains
+        - Curate data to be heavy on confusing/subtle cases that need guideline based adjudication
+    - Large scale synthetic data of preference pairs to train DPO 
+        - inexpensive compared to GRPO
+        - Can be curated to target exact flaws with the model
 
 Eval:
+    - 

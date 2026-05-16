@@ -4,5 +4,12 @@ hallucination checks:
     - patient age or sex mentioned in the report
 
 
+Evals:
+    - Evaluate metrics with frontal/lateral individually and combined
+    - LLM based scoring of the findings and impression for the val set based on the GTs
+    - Distinction for significant & insignificant tasks
+    - Evaluate models that are given guidelines while training vs without
+
+
 
 

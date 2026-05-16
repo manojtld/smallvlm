@@ -1,0 +1,18 @@
+==================================================================
+  LLM Eval — sft_phase5_2b_5ep
+  Traces : sft_phase5_2b_5ep.traces.jsonl
+  Scored : 770 samples
+==================================================================
+
+  Accuracy       (0-10, higher=better)  mean=3.04   median=0.0
+  Completeness   (0-10, higher=better)  mean=3.02   median=0.0
+  Hallucination  (0-10, higher=cleaner) mean=9.47   median=10.0
+
+  Accuracy distribution (0=worst, 10=best):
+  0:423  1: 13  2: 28  3: 31  4: 29  5: 17  6: 24  7: 18  8: 61  9: 36  10: 90
+
+  Completeness distribution:
+  0:420  1:  7  2: 22  3: 22  4: 32  5: 43  6: 22  7: 36  8: 68  9: 42  10: 56
+
+  Hallucination distribution (10=clean, 0=heavily hallucinated):
+  0:  2  1:  2  2:  6  3: 12  4:  8  5: 14  6: 13  7:  9  8: 15  9: 11  10:678

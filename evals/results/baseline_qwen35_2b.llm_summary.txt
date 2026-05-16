@@ -1,0 +1,18 @@
+==================================================================
+  LLM Eval — baseline_qwen35_2b
+  Traces : baseline_qwen35_2b.traces.jsonl
+  Scored : 768 samples
+==================================================================
+
+  Accuracy       (0-10, higher=better)  mean=6.73   median=8.0
+  Completeness   (0-10, higher=better)  mean=7.14   median=8.0
+  Hallucination  (0-10, higher=cleaner) mean=7.70   median=8.0
+
+  Accuracy distribution (0=worst, 10=best):
+  0: 46  1: 18  2: 49  3: 33  4: 58  5: 30  6: 74  7: 36  8:151  9: 64  10:209
+
+  Completeness distribution:
+  0: 41  1: 12  2: 38  3: 34  4: 38  5: 65  6: 39  7: 37  8:106  9:107  10:251
+
+  Hallucination distribution (10=clean, 0=heavily hallucinated):
+  0: 23  1:  6  2: 15  3: 24  4: 15  5: 42  6: 94  7: 54  8:128  9:102  10:265
