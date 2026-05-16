@@ -82,9 +82,56 @@ def _worker(rank: int, samples: list, traces_path: str, lock: mp.Lock, model_id:
                     f.write(json.dumps(trace) + "\n")
 
 
+def _model_slug(model_id: str) -> str:
+    """Convert model path or HF ID to a safe filename stem."""
+    return Path(model_id).name.replace("/", "_").replace(".", "_")
+
+
+def _save_summary(results: dict, summary_path: Path) -> None:
+    """Write a human-readable summary alongside the JSON metrics."""
+    model_id = results["model"]
+    l1 = results["level1"]
+    l2_macro = results["level2"]["macro"]
+    per = results["level2"]["per_label"]
+
+    lines = []
+    lines.append("=" * 64)
+    lines.append(f"  Model   : {model_id}")
+    lines.append(f"  Samples : {results['n_samples']}")
+    lines.append("=" * 64)
+
+    lines.append("\n── Level 1: Normal / Abnormal ──────────────────────────────")
+    lines.append(f"  Accuracy    : {l1['accuracy']:.3f}")
+    lines.append(f"  Sensitivity : {l1['sensitivity']:.3f}  (recall for abnormal)")
+    lines.append(f"  Specificity : {l1['specificity']:.3f}  (recall for normal)")
+    lines.append(f"  Precision   : {l1['precision']:.3f}")
+    lines.append(f"  F1          : {l1['f1']:.3f}")
+    lines.append(f"  TP={l1['tp']}  TN={l1['tn']}  FP={l1['fp']}  FN={l1['fn']}")
+
+    lines.append("\n── Level 2: Finding Presence (14 labels) ───────────────────")
+    if not per:
+        lines.append("  No parseable L2 outputs.")
+    else:
+        lines.append(f"  Macro F1          : {l2_macro.get('macro_f1', 0):.3f}")
+        lines.append(f"  Macro Sensitivity : {l2_macro.get('macro_sensitivity', 0):.3f}")
+        lines.append(f"  Macro Specificity : {l2_macro.get('macro_specificity', 0):.3f}")
+        lines.append(f"  Macro Precision   : {l2_macro.get('macro_precision', 0):.3f}")
+        lines.append(f"\n  {'Label':35s}  {'F1':>6}  {'Sens':>6}  {'Spec':>6}  {'N+':>5}")
+        lines.append(f"  {'-'*62}")
+        for label in EVAL_LABELS:
+            if label not in per:
+                continue
+            m = per[label]
+            n_pos = m["tp"] + m["fn"]
+            lines.append(f"  {label:35s}  {m['f1']:6.3f}  {m['sensitivity']:6.3f}  {m['specificity']:6.3f}  {n_pos:5d}")
+
+    summary_path.write_text("\n".join(lines))
+    print(f"Summary  → {summary_path}")
+
+
 def run(n_gpus: int = 1, output: str = None, model_id: str = "Qwen/Qwen3.5-0.8B") -> dict:
     samples = load_test_split()
-    out_path = Path(output) if output else RESULTS_DIR / "baseline_qwen35_08b.json"
+    out_path = Path(output) if output else RESULTS_DIR / f"{_model_slug(model_id)}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     traces_path = out_path.with_suffix(".traces.jsonl")
 
@@ -157,7 +204,8 @@ def run(n_gpus: int = 1, output: str = None, model_id: str = "Qwen/Qwen3.5-0.8B"
     }
 
     out_path.write_text(json.dumps(results, indent=2))
-    print(f"\nMetrics  → {out_path}")
+    _save_summary(results, out_path.with_suffix(".summary.txt"))
+    print(f"Metrics  → {out_path}")
     print(f"Traces   → {traces_path}")
     return results
 
