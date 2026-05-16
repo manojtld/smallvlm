@@ -8,6 +8,7 @@ evals/data/test_split.json so results are reproducible across runs.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
@@ -15,7 +16,7 @@ from typing import List, Optional
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-DATA_DIR = Path("/raid/manoj/smallvlm/raddar/chest-xrays-indiana-university/versions/2")
+DATA_DIR = Path(os.environ.get("SMALLVLM_DATA", "/raid/manoj/smallvlm")) / "raddar/chest-xrays-indiana-university/versions/2"
 SPLIT_CACHE = Path(__file__).parent / "data" / "test_split.json"
 
 
