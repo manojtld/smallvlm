@@ -32,6 +32,7 @@ from transformers import AutoModelForImageTextToText, AutoProcessor, Trainer, Tr
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from training.collator import CXRCollator
 from training.dataset import CXRSFTDataset
+from training.l2_eval import L2EvalCallback
 from training.metrics import make_clearml_callback
 
 # ── LoRA targets: both DeltaNet linear_attn and standard self_attn layers ─────
@@ -251,13 +252,22 @@ def main():
             self._flush_task_losses(self._eval_task_loss_accum, "eval", self.state.global_step)
             return result
 
+    l2_cb = L2EvalCallback(
+        val_samples=val_ds.samples,
+        processor=processor,
+        device=training_args.device.type + ":0",
+        clearml_logger=_clearml_logger,
+        n_samples=150,
+        batch_size=8,
+    )
+
     trainer = WeightedTrainer(
         model=model,
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
         data_collator=collator,
-        callbacks=[clearml_cb],
+        callbacks=[clearml_cb, l2_cb],
     )
 
     trainer.train()
