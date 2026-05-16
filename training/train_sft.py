@@ -174,26 +174,32 @@ def main():
         def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
             task_types = inputs.pop("task_types", None)
             outputs = model(**inputs)
+            loss = outputs.loss  # model applies the correct label shift internally
 
-            # Sample-level mean: equal weight per sample regardless of target length
-            labels = inputs["labels"]
-            per_tok = F.cross_entropy(
-                outputs.logits.view(-1, outputs.logits.size(-1)),
-                labels.view(-1),
-                ignore_index=-100,
-                reduction="none",
-            ).view(labels.shape)
-            valid_mask = (labels != -100).float()
-            per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
-            loss = per_sample.mean()
-
-            # Accumulate per-task losses — logged in on_log / on_evaluate callbacks
+            # Per-task logging: replicate the model's shifted cross-entropy per sample.
+            # The model shifts: logit[i] predicts label[i+1], so we do the same.
             if task_types:
-                is_eval = return_outputs
-                accum = self._eval_task_loss_accum if is_eval else self._task_loss_accum
-                for i, task in enumerate(task_types):
-                    fam = TASK_FAMILY.get(task, task)
-                    accum.setdefault(fam, []).append(per_sample[i].item())
+                try:
+                    logits = outputs.logits                    # (B, T, V)
+                    labels = inputs["labels"]                  # (B, T)
+                    shift_logits = logits[:, :-1, :].contiguous()   # (B, T-1, V)
+                    shift_labels = labels[:, 1:].contiguous()        # (B, T-1)
+                    per_tok = F.cross_entropy(
+                        shift_logits.reshape(-1, shift_logits.size(-1)),
+                        shift_labels.reshape(-1),
+                        ignore_index=-100,
+                        reduction="none",
+                    ).view(shift_labels.shape)                        # (B, T-1)
+                    valid_mask = (shift_labels != -100).float()
+                    per_sample = (per_tok * valid_mask).sum(1) / valid_mask.sum(1).clamp(min=1)
+
+                    is_eval = return_outputs
+                    accum = self._eval_task_loss_accum if is_eval else self._task_loss_accum
+                    for i, task in enumerate(task_types):
+                        fam = TASK_FAMILY.get(task, task)
+                        accum.setdefault(fam, []).append(per_sample[i].item())
+                except Exception:
+                    pass
 
             return (loss, outputs) if return_outputs else loss
 
